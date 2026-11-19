@@ -102,7 +102,7 @@ export default function SunMoonHeroIntro({
   if (phase === "checking") {
     return (
       <section
-        className="relative h-[84vh] min-h-[620px] max-h-[940px] w-full sm:h-[88vh]"
+        className="relative min-h-[600px] h-[82svh] max-h-[960px] w-full sm:h-[88svh]"
         aria-hidden="true"
       />
     );
@@ -193,25 +193,25 @@ export default function SunMoonHeroIntro({
           </motion.div>
         )}
 
-        {/* 3. Hero Banner + Further Left-Shifted Picture + Glassmorphic Right Half-Circles + Text */}
+        {/* 3. Responsive Hero Banner + Downward/Left-Adjusted Picture + Lower Glassmorphic Circles */}
         {phase === "completed" && (
           <motion.div
             key="completed-hero"
             initial={{ opacity: 0.25 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            className="relative h-[84vh] min-h-[620px] max-h-[940px] w-full overflow-hidden sm:h-[88vh]"
+            className="relative min-h-[600px] h-[82svh] max-h-[960px] w-full overflow-hidden sm:h-[88svh]"
           >
-            {/* Hero illustration shifted further left */}
+            {/* Hero illustration shifted slightly down & left so navbar doesn't cover top */}
             <img
               src="/assets/hero.png"
               alt="Vintage bride and groom wedding illustration"
-              style={{ objectPosition: "34% 42%" }}
-              className="h-full w-full -translate-x-10 -translate-y-7 scale-[1.16] object-cover sm:-translate-x-14 sm:-translate-y-10 md:-translate-x-20"
+              style={{ objectPosition: "34% 62%" }}
+              className="h-full w-full -translate-x-6 translate-y-6 scale-[1.12] object-cover sm:-translate-x-12 sm:translate-y-8 md:-translate-x-16 md:translate-y-10"
             />
 
             {/* Swaying Flower Bouquet on the Left Side */}
-            <div className="pointer-events-none absolute top-1/2 left-1 z-30 -translate-y-1/2 sm:left-4 md:left-7">
+            <div className="pointer-events-none absolute top-[54%] left-1 z-30 -translate-y-1/2 sm:left-4 md:left-7">
               <motion.div
                 animate={{
                   rotate: [-5.5, 5.5, -5.5],
@@ -223,7 +223,7 @@ export default function SunMoonHeroIntro({
                   ease: "easeInOut",
                 }}
                 style={{ transformOrigin: "50% 82%" }}
-                className="w-32 sm:w-44 md:w-52 lg:w-60"
+                className="w-24 sm:w-40 md:w-52 lg:w-60"
               >
                 <img
                   src="/assets/flower.png"
@@ -233,8 +233,8 @@ export default function SunMoonHeroIntro({
               </motion.div>
             </div>
 
-            {/* Three Glassmorphic Half-Circles Extending Past Right Screen Edge & Jutting Out Left */}
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-20 flex items-center justify-end">
+            {/* Glassmorphic Layered Circles Shifted Down Below Navbar + Responsive Across Viewports */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex h-[86%] items-center justify-center pt-12 md:inset-y-0 md:inset-x-auto md:right-0 md:h-full md:justify-end md:pt-14">
               {/* Layer 1 (Largest): Glassmorphic Warm Beige */}
               <motion.div
                 initial={{ x: "110%", opacity: 0 }}
@@ -252,7 +252,7 @@ export default function SunMoonHeroIntro({
                   border: "1.5px solid rgba(255, 255, 255, 0.55)",
                   boxShadow: "-10px 0 30px rgba(36, 2, 14, 0.08)",
                 }}
-                className="absolute -right-28 h-[560px] w-[560px] rounded-full sm:-right-36 sm:h-[660px] sm:w-[660px] md:-right-44 md:h-[760px] md:w-[760px]"
+                className="absolute translate-y-5 h-[430px] w-[430px] rounded-full sm:h-[540px] sm:w-[540px] md:-right-36 md:translate-y-7 md:h-[620px] md:w-[620px] lg:-right-44 lg:h-[710px] lg:w-[710px]"
               />
 
               {/* Layer 2 (Medium): Glassmorphic Soft Mint Blue */}
@@ -272,7 +272,7 @@ export default function SunMoonHeroIntro({
                   border: "1.5px solid rgba(255, 255, 255, 0.65)",
                   boxShadow: "-8px 0 26px rgba(36, 2, 14, 0.09)",
                 }}
-                className="absolute -right-24 h-[480px] w-[480px] rounded-full sm:-right-32 sm:h-[570px] sm:w-[570px] md:-right-40 md:h-[660px] md:w-[660px]"
+                className="absolute translate-y-5 h-[375px] w-[375px] rounded-full sm:h-[470px] sm:w-[470px] md:-right-32 md:translate-y-7 md:h-[540px] md:w-[540px] lg:-right-40 lg:h-[620px] lg:w-[620px]"
               />
 
               {/* Layer 3 (Smallest / Top): Glassmorphic Soft Pink (#F4E2E6) */}
@@ -286,31 +286,31 @@ export default function SunMoonHeroIntro({
                 }}
                 style={{
                   background:
-                    "linear-gradient(135deg, rgba(244, 226, 230, 0.76) 0%, rgba(244, 226, 230, 0.56) 100%)",
+                    "linear-gradient(135deg, rgba(244, 226, 230, 0.78) 0%, rgba(244, 226, 230, 0.58) 100%)",
                   backdropFilter: "blur(18px)",
                   WebkitBackdropFilter: "blur(18px)",
                   border: "1.5px solid rgba(255, 255, 255, 0.78)",
                   boxShadow:
                     "-6px 0 22px rgba(36, 2, 14, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.55)",
                 }}
-                className="relative -right-20 flex h-[400px] w-[400px] items-center rounded-full pl-10 pr-24 sm:-right-28 sm:h-[480px] sm:w-[480px] sm:pl-14 sm:pr-32 md:-right-36 md:h-[560px] md:w-[560px] md:pl-16 md:pr-40"
+                className="relative flex translate-y-5 h-[320px] w-[320px] items-center justify-center rounded-full px-6 text-center sm:h-[400px] sm:w-[400px] sm:px-10 md:-right-28 md:translate-y-7 md:h-[460px] md:w-[460px] md:justify-start md:pr-24 md:pl-12 md:text-left lg:-right-36 lg:h-[530px] lg:w-[530px] lg:pr-32 lg:pl-16"
               >
-                {/* Hero Text & CTA Fitting Comfortably Inside the Inner Half-Circle */}
+                {/* Hero Text & CTA Fitting Comfortably Inside the Glass Arc */}
                 <motion.div
                   initial={{ opacity: 0, x: 16 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.45, delay: 0.52, ease: "easeOut" }}
                   style={{ color: "#24020E" }}
-                  className="pointer-events-auto w-full max-w-[240px] text-left sm:max-w-[270px] md:max-w-[300px]"
+                  className="pointer-events-auto w-full max-w-[225px] sm:max-w-[270px] md:max-w-[295px]"
                 >
                   <div
                     style={{
-                      backgroundColor: "rgba(255, 255, 255, 0.52)",
+                      backgroundColor: "rgba(255, 255, 255, 0.55)",
                       color: "#24020E",
                       borderColor: "rgba(36, 2, 14, 0.18)",
                       backdropFilter: "blur(8px)",
                     }}
-                    className="mb-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium tracking-wider"
+                    className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-medium tracking-wider sm:mb-2 sm:text-[11px]"
                   >
                     <Sparkles className="h-3 w-3" />
                     <span className="font-[var(--font-cormorant)] text-xs italic sm:text-sm">
@@ -323,26 +323,26 @@ export default function SunMoonHeroIntro({
                       color: "#24020E",
                       fontFamily: "var(--font-curly), cursive",
                     }}
-                    className="font-curly text-3xl leading-[1.12] font-normal tracking-normal sm:text-5xl"
+                    className="font-curly text-2xl leading-[1.12] font-normal tracking-normal sm:text-4xl lg:text-5xl"
                   >
                     WedPlan
                   </h1>
 
                   <p
                     style={{ color: "#24020E" }}
-                    className="mt-1 font-[var(--font-cormorant)] text-base leading-snug font-semibold italic sm:text-xl"
+                    className="mt-1 font-[var(--font-cormorant)] text-sm leading-snug font-semibold italic sm:text-lg lg:text-xl"
                   >
                     Every vow &amp; venue in one place.
                   </p>
 
                   <p
                     style={{ color: "rgba(36, 2, 14, 0.88)" }}
-                    className="mt-1.5 font-[var(--font-cormorant)] text-sm leading-snug font-medium sm:text-base"
+                    className="mt-1 font-[var(--font-cormorant)] text-xs leading-snug font-medium sm:mt-1.5 sm:text-sm lg:text-base"
                   >
                     Discover services, request bookings, and plan your day.
                   </p>
 
-                  <div className="mt-3.5 flex flex-wrap items-center gap-2">
+                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2 md:justify-start">
                     <Link
                       href="/services"
                       style={{ backgroundColor: "#24020E", color: "#F4E2E6" }}
