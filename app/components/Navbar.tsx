@@ -42,7 +42,7 @@ function getUserId(user?: NavbarUser | null): string {
 function getProfileHref(user?: NavbarUser | null): string {
   if (!user) return "/profile";
   const id = getUserId(user);
-  switch (user.role) {
+  switch ((user.role || "").toLowerCase()) {
     case "admin":
       return "/profile";
     case "vendor":
@@ -55,10 +55,10 @@ function getProfileHref(user?: NavbarUser | null): string {
   }
 }
 
-function getDashboardHref(role?: UserRole): string {
-  switch (role) {
+function getDashboardHref(role?: UserRole | string): string {
+  switch ((role || "").toLowerCase()) {
     case "admin":
-      return "/dashboard/admin";
+      return "/dashboard";
     case "vendor":
       return "/dashboard/vendor";
     case "customer":
@@ -214,12 +214,13 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
   };
 
   const profileHref = getProfileHref(currentUser);
+  const dashboardHref = getDashboardHref(currentUser?.role);
 
   const navLinks = currentUser
     ? [
         { label: "Home", href: "/" },
         { label: "Browse Services", href: "/services" },
-        { label: "Dashboard", href: getDashboardHref(currentUser.role) },
+        { label: "Dashboard", href: dashboardHref, exactDashboard: true },
         { label: "Profile", href: profileHref, matchPrefix: "/profile" },
       ]
     : [
@@ -227,8 +228,15 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
         { label: "Browse Services", href: "/services" },
       ];
 
-  const isActive = (href: string, matchPrefix?: string) => {
+  const isActive = (
+    href: string,
+    matchPrefix?: string,
+    exactDashboard?: boolean
+  ) => {
     if (href === "/") return pathname === "/";
+    if (exactDashboard && href === "/dashboard") {
+      return pathname === "/dashboard";
+    }
     if (matchPrefix) {
       return (
         pathname === matchPrefix || pathname?.startsWith(`${matchPrefix}/`)
@@ -313,7 +321,11 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
             className="hidden flex-1 items-center justify-center gap-2 md:flex"
           >
             {navLinks.map((item) => {
-              const active = isActive(item.href, item.matchPrefix);
+              const active = isActive(
+                item.href,
+                item.matchPrefix,
+                item.exactDashboard
+              );
               return (
                 <Link
                   key={item.label}
@@ -460,7 +472,7 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                       </Link>
 
                       <Link
-                        href={getDashboardHref(currentUser.role)}
+                        href={dashboardHref}
                         role="menuitem"
                         className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] transition hover:bg-[#24020E]/10"
                       >
@@ -524,7 +536,11 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
             >
               <div className="mt-3 flex flex-col gap-1.5 border-t border-[#24020E]/15 pt-3 pb-1">
                 {navLinks.map((item) => {
-                  const active = isActive(item.href, item.matchPrefix);
+                  const active = isActive(
+                    item.href,
+                    item.matchPrefix,
+                    item.exactDashboard
+                  );
                   return (
                     <Link
                       key={item.label}
@@ -605,7 +621,7 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                         <span>View Profile</span>
                       </Link>
                       <Link
-                        href={getDashboardHref(currentUser.role)}
+                        href={dashboardHref}
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] hover:bg-[#24020E]/10"
                       >
                         <LayoutDashboard className="h-4 w-4" />

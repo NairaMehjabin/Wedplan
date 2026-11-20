@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ArrowDown, SkipForward, Sparkles } from "lucide-react";
@@ -8,7 +8,7 @@ import { ArrowDown, SkipForward, Sparkles } from "lucide-react";
 const INTRO_STORAGE_KEY = "wedplan_hero_intro_completed";
 const SCROLL_CUE_STORAGE_KEY = "wedplan_scroll_cue_seen";
 
-type HeroPhase = "checking" | "intro" | "skipping" | "completed";
+type HeroPhase = "checking" | "intro" | "completed";
 
 interface SunMoonHeroIntroProps {
   /** Match this fill to the background color of the section immediately below the hero */
@@ -18,14 +18,46 @@ interface SunMoonHeroIntroProps {
 const WAVE_PATH =
   "M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V120H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z";
 
+const GRID_WAVE_STYLE: React.CSSProperties = {
+  backgroundColor: "#FCF9F4",
+  backgroundImage:
+    "linear-gradient(to right, rgba(36, 2, 14, 0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(36, 2, 14, 0.04) 1px, transparent 1px)",
+  backgroundSize: "28px 28px",
+};
+
+function StageGridBackdrop() {
+  return (
+    <div
+      aria-hidden="true"
+      style={GRID_WAVE_STYLE}
+      className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+    >
+      <div
+        style={{
+          background:
+            "radial-gradient(circle, rgba(255, 224, 232, 0.65) 0%, transparent 72%)",
+        }}
+        className="absolute -top-24 -left-24 h-[420px] w-[420px] rounded-full blur-3xl"
+      />
+      <div
+        style={{
+          background:
+            "radial-gradient(circle, rgba(186, 238, 233, 0.58) 0%, transparent 72%)",
+        }}
+        className="absolute right-[-90px] bottom-8 h-[440px] w-[440px] rounded-full blur-3xl"
+      />
+    </div>
+  );
+}
+
 export default function SunMoonHeroIntro({
-  waveFill = "#FFEDF1",
+  waveFill: _waveFill = "#FCF9F4",
 }: SunMoonHeroIntroProps) {
+  const clipUid = useId().replace(/:/g, "");
   const [phase, setPhase] = useState<HeroPhase>("checking");
   const [showScrollCue, setShowScrollCue] = useState(false);
 
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
-  const skipVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     try {
@@ -46,11 +78,9 @@ export default function SunMoonHeroIntro({
     }
   }, []);
 
-  // Lock scrolling while intro or skipping clip is playing
+  // Lock scrolling while intro clip is playing
   useEffect(() => {
-    const shouldLockScroll = phase === "intro" || phase === "skipping";
-
-    if (shouldLockScroll) {
+    if (phase === "intro") {
       document.documentElement.style.overflow = "hidden";
       document.body.style.overflow = "hidden";
     } else {
@@ -99,7 +129,7 @@ export default function SunMoonHeroIntro({
     if (introVideoRef.current) {
       introVideoRef.current.pause();
     }
-    setPhase("skipping");
+    finishIntroForever();
   };
 
   if (phase === "checking") {
@@ -114,26 +144,39 @@ export default function SunMoonHeroIntro({
   return (
     <section className="relative w-full overflow-hidden">
       <AnimatePresence mode="sync">
-        {/* 1. Full 16s Intro Video inside Vintage Memory Frame */}
+        {/* 1. Full Intro Video inside Vintage Memory Frame */}
         {phase === "intro" && (
           <motion.div
             key="intro-stage"
             initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
-            style={{ backgroundColor: "#24020E" }}
-            className="fixed inset-0 z-50 flex h-screen w-screen items-center justify-center p-4 select-none"
+            transition={{ duration: 0.35, ease: "easeInOut" }}
+            className="fixed inset-0 z-50 flex h-screen w-screen flex-col items-center justify-center gap-3 p-4 select-none"
           >
-            <div className="relative flex aspect-[16/10] w-[95vw] max-w-[920px] items-center justify-center">
+            <StageGridBackdrop />
+
+            <div className="relative z-10 text-center">
+              <p className="text-[10px] font-bold tracking-[0.22em] text-teal-800 uppercase">
+                WedPlan Keepsake Curtain
+              </p>
+              <h2
+                style={{ fontFamily: "var(--font-curly), cursive" }}
+                className="text-2xl text-[#24020E] sm:text-3xl"
+              >
+                Sun &amp; Moon Wedding Intro
+              </h2>
+            </div>
+
+            <div className="relative z-10 flex aspect-[16/10] w-[84vw] max-w-[740px] items-center justify-center sm:w-[78vw]">
               <img
                 src="/assets/frame.png"
                 alt=""
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 h-full w-full rounded-2xl object-fill shadow-2xl"
+                className="pointer-events-none absolute inset-0 h-full w-full object-fill"
               />
 
-              <div className="relative z-10 flex h-full w-full items-center justify-center p-[7.2%] sm:p-[6.8%]">
+              <div className="relative z-10 flex h-full w-full items-center justify-center px-[13%] py-[10.5%] sm:px-[12.5%] sm:py-[10%]">
                 <video
                   ref={introVideoRef}
                   src="/assets/intro.mp4"
@@ -143,7 +186,7 @@ export default function SunMoonHeroIntro({
                   preload="auto"
                   onEnded={finishIntroForever}
                   onError={finishIntroForever}
-                  className="h-full w-full rounded-lg object-contain"
+                  className="max-h-full max-w-full rounded-md object-contain"
                 />
               </div>
             </div>
@@ -151,8 +194,8 @@ export default function SunMoonHeroIntro({
             <button
               type="button"
               onClick={handleSkipClick}
-              style={{ backgroundColor: "rgba(36, 2, 14, 0.78)" }}
-              className="fixed right-6 bottom-6 z-50 inline-flex items-center gap-2 rounded-full border border-white/30 px-5 py-2.5 text-sm font-medium text-white backdrop-blur-md transition hover:bg-white hover:text-[#24020E]"
+              style={{ backgroundColor: "rgba(36, 2, 14, 0.82)" }}
+              className="fixed right-6 bottom-6 z-50 inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/30 px-5 py-2.5 text-sm font-medium text-white shadow-sm backdrop-blur-md transition hover:bg-teal-800"
             >
               <span>Skip</span>
               <SkipForward className="h-4 w-4" />
@@ -160,51 +203,35 @@ export default function SunMoonHeroIntro({
           </motion.div>
         )}
 
-        {/* 2. Skipped Curtain Video inside Vintage Memory Frame */}
-        {phase === "skipping" && (
-          <motion.div
-            key="skipping-stage"
-            initial={{ opacity: 0.85 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.22, ease: "easeInOut" }}
-            style={{ backgroundColor: "#24020E" }}
-            className="fixed inset-0 z-50 flex h-screen w-screen items-center justify-center p-4 select-none"
-          >
-            <div className="relative flex aspect-[16/10] w-[95vw] max-w-[920px] items-center justify-center">
-              <img
-                src="/assets/frame.png"
-                alt=""
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 h-full w-full rounded-2xl object-fill shadow-2xl"
-              />
-
-              <div className="relative z-10 flex h-full w-full items-center justify-center p-[7.2%] sm:p-[6.8%]">
-                <video
-                  ref={skipVideoRef}
-                  src="/assets/skipped-intro.mp4"
-                  autoPlay
-                  muted
-                  playsInline
-                  preload="auto"
-                  onEnded={finishIntroForever}
-                  onError={finishIntroForever}
-                  className="h-full w-full rounded-lg object-contain"
-                />
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* 3. Responsive Hero Banner + Downward/Left-Adjusted Picture + Lower Glassmorphic Circles */}
+        {/* 2. Responsive Hero Banner + Downward/Left-Adjusted Picture + Lower Glassmorphic Circles */}
         {phase === "completed" && (
           <motion.div
             key="completed-hero"
-            initial={{ opacity: 0.25 }}
+            initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 0.28, ease: "easeOut" }}
+            transition={{ duration: 0.35, ease: "easeOut" }}
             className="relative min-h-[600px] h-[82svh] max-h-[960px] w-full overflow-hidden sm:h-[88svh]"
           >
+            {/* Shared ClipPath Definition for Both Grid Waves */}
+            <svg
+              width="0"
+              height="0"
+              aria-hidden="true"
+              className="pointer-events-none absolute"
+            >
+              <defs>
+                <clipPath
+                  id={`hero-grid-wave-${clipUid}`}
+                  clipPathUnits="objectBoundingBox"
+                >
+                  <path
+                    d={WAVE_PATH}
+                    transform="scale(0.0008333333333333334, 0.008333333333333333)"
+                  />
+                </clipPath>
+              </defs>
+            </svg>
+
             {/* Hero illustration shifted slightly down & left so navbar doesn't cover top */}
             <img
               src="/assets/hero.png"
@@ -231,7 +258,7 @@ export default function SunMoonHeroIntro({
                 <img
                   src="/assets/flower.png"
                   alt=""
-                  className="h-auto w-full object-contain drop-shadow-xl"
+                  className="h-auto w-full object-contain"
                 />
               </motion.div>
             </div>
@@ -358,28 +385,29 @@ export default function SunMoonHeroIntro({
               </motion.div>
             </div>
 
-            {/* Layered Off-White Wave Border + Pink Wave Divider */}
+            {/* Layered Grid Wave Border + Main Grid Wave Divider */}
             <div className="pointer-events-none absolute right-0 bottom-0 left-0 z-20 translate-y-[18px] leading-[0]">
-              {/* Top Off-White Wave Rim */}
-              <svg
-                viewBox="0 0 1200 120"
-                preserveAspectRatio="none"
+              {/* Top Grid Wave Rim */}
+              <div
                 aria-hidden="true"
+                style={{
+                  ...GRID_WAVE_STYLE,
+                  clipPath: `url(#hero-grid-wave-${clipUid})`,
+                  WebkitClipPath: `url(#hero-grid-wave-${clipUid})`,
+                }}
                 className="relative block h-[85px] w-[calc(115%+1.3px)] -translate-y-2 sm:h-[110px] sm:-translate-y-3"
-                style={{ fill: "#FCF9F4" }}
-              >
-                <path d={WAVE_PATH} />
-              </svg>
+              />
 
-              {/* Main Pink Wave (#FFEDF1) Overlapping Below the Off-White Rim */}
-              <svg
-                viewBox="0 0 1200 120"
-                preserveAspectRatio="none"
+              {/* Main Grid Wave Overlapping Below the Top Rim */}
+              <div
+                aria-hidden="true"
+                style={{
+                  ...GRID_WAVE_STYLE,
+                  clipPath: `url(#hero-grid-wave-${clipUid})`,
+                  WebkitClipPath: `url(#hero-grid-wave-${clipUid})`,
+                }}
                 className="pointer-events-none absolute inset-0 block h-[85px] w-[calc(115%+1.3px)] translate-y-1 sm:h-[110px] sm:translate-y-1.5"
-                style={{ fill: waveFill }}
-              >
-                <path d={WAVE_PATH} />
-              </svg>
+              />
             </div>
 
             {/* One-time Scroll Down Indicator (only shown once on very first entry) */}

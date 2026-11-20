@@ -2,7 +2,7 @@
 
 import React, { Suspense, useState, useEffect, use } from "react";
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import {
@@ -17,15 +17,30 @@ import {
   Loader2,
   Send,
   X,
+  ArrowUpRight,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+interface VendorProfileRecord {
+  _id?: string;
+  id?: string;
+  name?: string;
+  businessName?: string;
+  role?: string;
+  image?: string | null;
+  photoUrl?: string;
+  profilePicture?: string;
+  avatar?: string;
+  img?: string;
+}
 
 export interface ServiceDetail {
   _id: string;
   vendorId?: string;
   vendorName?: string;
   businessName?: string;
+  vendorImage?: string | null;
   serviceName: string;
   category: string;
   description: string;
@@ -43,11 +58,26 @@ interface PageProps {
 const FALLBACK_IMAGE =
   "https://i.pinimg.com/736x/75/b6/2b/75b62baf81b9aacb79b6338d4df69043.jpg";
 
-function hasAuthSession(): boolean {
-  if (typeof window === "undefined") return false;
-  const token = window.localStorage.getItem("wedplan_token");
-  const user = window.localStorage.getItem("wedplan_user");
-  return Boolean(token || user);
+function buildDicebearAvatar(seed: string): string {
+  return `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(
+    seed || "WedPlan Atelier"
+  )}`;
+}
+
+function extractVendorImage(record?: VendorProfileRecord | null): string {
+  return (
+    record?.image ||
+    record?.profilePicture ||
+    record?.photoUrl ||
+    record?.avatar ||
+    record?.img ||
+    ""
+  );
+}
+
+function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem("wedplan_token");
 }
 
 function validateEventDate(dateStr: string): string | null {
@@ -56,7 +86,6 @@ function validateEventDate(dateStr: string): string | null {
     return "Please select an event date.";
   }
 
-  // Match YYYY-MM-DD strictly so partial/malformed dates are caught
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
   if (!match) {
     return "Please enter a valid event date.";
@@ -90,17 +119,30 @@ function validateEventDate(dateStr: string): string | null {
   return null;
 }
 
+function ServiceDetailLoadingScreen() {
+  return (
+    <div
+      style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
+      className="flex min-h-screen flex-col items-center justify-center px-6 pt-28"
+    >
+      <Loader2 className="mb-3 h-8 w-8 animate-spin text-teal-700" />
+      <p className="text-xs font-semibold tracking-[0.22em] text-[#24020E]/65 uppercase">
+        Opening service details...
+      </p>
+    </div>
+  );
+}
+
 function ServiceDetailContent({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() =>
-    hasAuthSession()
-  );
-
+  const [mounted, setMounted] = useState(false);
   const [service, setService] = useState<ServiceDetail | null>(null);
+  const [vendorProfile, setVendorProfile] = useState<VendorProfileRecord | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -116,35 +158,12 @@ function ServiceDetailContent({ params }: PageProps) {
     text: string;
   } | null>(null);
 
-  // Enforce authentication & redirect signed-out visitors to /sign-in
   useEffect(() => {
-    const checkAuth = () => {
-      const authed = hasAuthSession();
-      setIsAuthenticated(authed);
-
-      if (!authed) {
-        const query = searchParams?.toString();
-        const targetPath = `${pathname || `/services/${id}`}${query ? `?${query}` : ""}`;
-        const redirectParam =
-          targetPath && targetPath.startsWith("/")
-            ? `?redirect=${encodeURIComponent(targetPath)}`
-            : "";
-        router.replace(`/sign-in${redirectParam}`);
-      }
-    };
-
-    checkAuth();
-    window.addEventListener("wedplan-auth-changed", checkAuth);
-    window.addEventListener("storage", checkAuth);
-
-    return () => {
-      window.removeEventListener("wedplan-auth-changed", checkAuth);
-      window.removeEventListener("storage", checkAuth);
-    };
-  }, [id, pathname, searchParams, router]);
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
-    if (!id || !isAuthenticated) return;
+    if (!mounted || !id) return;
     let active = true;
 
     async function loadService() {
@@ -152,11 +171,9 @@ function ServiceDetailContent({ params }: PageProps) {
         setLoading(true);
         setError(null);
         setActiveImageIndex(0);
+        setVendorProfile(null);
 
-        const token =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem("wedplan_token")
-            : null;
+        const token = getAuthToken();
 
         const res = await fetch(`${API_BASE}/api/services/${id}`, {
           cache: "no-store",
@@ -173,7 +190,36 @@ function ServiceDetailContent({ params }: PageProps) {
         }
 
         if (active) {
-          setService(data.data);
+          const loadedService: ServiceDetail = data.data;
+          setService(loadedService);
+
+          if (loadedService.vendorId) {
+            try {
+              const vRes = await fetch(
+                `${API_BASE}/api/auth/user/${encodeURIComponent(loadedService.vendorId)}`,
+                {
+                  cache: "no-store",
+                  credentials: "include",
+                  headers: token
+                    ? { Authorization: `Bearer ${token}` }
+                    : undefined,
+                }
+              );
+              if (vRes.ok) {
+                const vJson = await vRes.json().catch(() => null);
+                const fetchedUser = vJson?.user || vJson?.data || vJson;
+                if (
+                  active &&
+                  fetchedUser &&
+                  typeof fetchedUser === "object"
+                ) {
+                  setVendorProfile(fetchedUser as VendorProfileRecord);
+                }
+              }
+            } catch {
+              // Fall back to service fields / self-made profile
+            }
+          }
         }
       } catch (err) {
         if (active) {
@@ -193,7 +239,7 @@ function ServiceDetailContent({ params }: PageProps) {
     return () => {
       active = false;
     };
-  }, [id, isAuthenticated]);
+  }, [mounted, id]);
 
   // Close modal on Escape key
   useEffect(() => {
@@ -228,17 +274,10 @@ function ServiceDetailContent({ params }: PageProps) {
     e.preventDefault();
     setBookingFeedback(null);
 
-    if (!hasAuthSession()) {
-      const authMsg = "Please sign in to submit a booking request.";
-      toast.error(authMsg);
-      router.replace(
-        `/sign-in?redirect=${encodeURIComponent(pathname || `/services/${id}`)}`
-      );
-      return;
-    }
-
     if (!service) {
-      reportBookingError("Service details are missing. Please refresh and try again.");
+      reportBookingError(
+        "Service details are missing. Please refresh and try again."
+      );
       return;
     }
 
@@ -265,10 +304,7 @@ function ServiceDetailContent({ params }: PageProps) {
 
     try {
       setSubmitting(true);
-      const token =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem("wedplan_token")
-          : null;
+      const token = getAuthToken();
 
       const res = await fetch(`${API_BASE}/api/bookings`, {
         method: "POST",
@@ -287,11 +323,21 @@ function ServiceDetailContent({ params }: PageProps) {
         }),
       });
 
+      if (res.status === 401 || res.status === 403) {
+        const authMsg = "Please sign in to submit a booking request.";
+        toast.error(authMsg);
+        router.replace(
+          `/sign-in?redirect=${encodeURIComponent(pathname || `/services/${id}`)}`
+        );
+        return;
+      }
+
       const data = await res.json().catch(() => null);
 
       if (!res.ok || data?.success === false) {
         throw new Error(
-          data?.message || `Could not submit booking request (Status: ${res.status}).`
+          data?.message ||
+            `Could not submit booking request (Status: ${res.status}).`
         );
       }
 
@@ -312,53 +358,30 @@ function ServiceDetailContent({ params }: PageProps) {
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <div
-        style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
-        className="flex min-h-screen flex-col items-center justify-center px-6 pt-28"
-      >
-        <Loader2 className="mb-4 h-10 w-10 animate-spin text-[#C84B31]" />
-        <p className="text-[11px] font-black tracking-[0.28em] uppercase">
-          Redirecting to sign in...
-        </p>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div
-        style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
-        className="flex min-h-screen flex-col items-center justify-center px-6 pt-28"
-      >
-        <Loader2 className="mb-4 h-10 w-10 animate-spin text-[#C84B31]" />
-        <p className="text-[11px] font-black tracking-[0.28em] uppercase">
-          Opening keepsake details...
-        </p>
-      </div>
-    );
+  // Identical loading markup across SSR and initial client render
+  if (!mounted || loading) {
+    return <ServiceDetailLoadingScreen />;
   }
 
   if (error || !service) {
     return (
       <div
-        style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
+        style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
         className="flex min-h-screen flex-col items-center justify-center px-6 pt-32 text-center"
       >
-        <div className="max-w-md rounded-[36px] border-[3px] border-[#24020E] bg-[#FCF9F4] p-8 shadow-[8px_8px_0px_0px_#24020E]">
+        <div className="max-w-md rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/85 p-8 shadow-sm backdrop-blur-md">
           <h2
             style={{ fontFamily: "var(--font-curly), cursive" }}
-            className="mb-3 text-3xl text-[#24020E]"
+            className="mb-2 text-3xl text-[#24020E]"
           >
             Service not found
           </h2>
-          <p className="mb-6 font-[var(--font-cormorant)] text-lg text-[#24020E]/80">
+          <p className="mb-6 font-[var(--font-cormorant)] text-lg text-[#24020E]/75">
             {error || "This wedding service could not be found."}
           </p>
           <Link
             href="/"
-            className="inline-block rounded-full border-2 border-[#24020E] bg-[#24020E] px-6 py-3 text-xs font-black tracking-widest text-[#FCF9F4] uppercase shadow-md transition hover:scale-105"
+            className="inline-block rounded-xl bg-[#24020E] px-6 py-3 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-sm transition hover:bg-teal-800"
           >
             Return Home
           </Link>
@@ -373,33 +396,59 @@ function ServiceDetailContent({ params }: PageProps) {
       : [FALLBACK_IMAGE];
 
   const mainImage = galleryImages[activeImageIndex] || FALLBACK_IMAGE;
-  const vendorDisplay =
-    service.businessName || service.vendorName || "Verified Atelier";
+
+  const isLinkedVendor = Boolean(service.vendorId);
+  const ownerName =
+    vendorProfile?.name ||
+    service.vendorName ||
+    service.businessName ||
+    "WedPlan Curated Studio";
+  const ownerBusiness =
+    vendorProfile?.businessName ||
+    service.businessName ||
+    `${service.category} Specialist`;
+  const ownerSeed = service.vendorId || ownerName;
+  const ownerAvatar =
+    extractVendorImage(vendorProfile) ||
+    service.vendorImage ||
+    buildDicebearAvatar(ownerSeed);
+  const vendorProfileHref = service.vendorId
+    ? `/profile/${encodeURIComponent(service.vendorId)}`
+    : `/profile/default-${encodeURIComponent(service._id)}`;
+
   const isBookable =
     (service.status || "approved").toLowerCase() === "approved" &&
     service.isActive !== false;
 
   return (
     <div
-      style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
+      style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
       className="relative flex min-h-screen flex-col overflow-x-clip pt-24 pb-20 sm:pt-28"
     >
-      {/* Off-White & Darker Pink Circle Auras */}
+      {/* Slim Grid Overlay + Subtle Blush & Mint Glows */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
       >
         <div
           style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(36, 2, 14, 0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(36, 2, 14, 0.04) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+          className="absolute inset-0"
+        />
+        <div
+          style={{
             background:
-              "radial-gradient(circle, rgba(252, 249, 244, 0.85) 0%, rgba(252, 249, 244, 0.25) 58%, transparent 76%)",
+              "radial-gradient(circle, rgba(255, 224, 232, 0.58) 0%, transparent 72%)",
           }}
           className="absolute -top-20 -left-24 h-96 w-96 rounded-full blur-3xl"
         />
         <div
           style={{
             background:
-              "radial-gradient(circle, rgba(232, 155, 174, 0.32) 0%, rgba(217, 122, 148, 0.12) 58%, transparent 76%)",
+              "radial-gradient(circle, rgba(186, 238, 233, 0.52) 0%, transparent 72%)",
           }}
           className="absolute top-1/3 -right-24 h-[420px] w-[420px] rounded-full blur-3xl"
         />
@@ -409,43 +458,38 @@ function ServiceDetailContent({ params }: PageProps) {
       <div className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-2">
         <Link
           href="/"
-          className="group flex items-center gap-3 text-[10px] font-black tracking-widest uppercase transition-all hover:opacity-85"
+          className="group flex items-center gap-2.5 text-xs font-semibold tracking-wider uppercase transition hover:opacity-85"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-[#24020E] bg-[#FCF9F4] shadow-[3px_3px_0px_0px_#24020E] transition-colors group-hover:bg-[#24020E] group-hover:text-[#FCF9F4]">
-            <ArrowLeft size={17} />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#24020E]/20 bg-[#FFF4F7]/85 shadow-2xs backdrop-blur-md transition group-hover:bg-[#24020E] group-hover:text-[#FCF9F4]">
+            <ArrowLeft size={16} />
           </div>
-          <span className="rounded-full border border-[#24020E]/25 bg-[#FCF9F4]/90 px-3.5 py-1.5 shadow-2xs">
+          <span className="rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 px-3.5 py-1.5 shadow-2xs backdrop-blur-md">
             Back Home
           </span>
         </Link>
 
-        <span className="rounded-full border-2 border-[#24020E] bg-[#FCF9F4] px-4 py-1.5 text-[10px] font-black tracking-widest uppercase shadow-[3px_3px_0px_0px_#24020E]">
+        <span className="rounded-full border border-teal-800/25 bg-[#E3F6F5]/85 px-4 py-1 text-[11px] font-semibold tracking-wider text-teal-950 uppercase backdrop-blur-xs">
           {service.category}
         </span>
       </div>
 
       {/* Main Content */}
       <main className="relative z-10 mx-auto w-full max-w-6xl flex-grow px-6 py-8 md:py-12">
-        <div className="grid items-center gap-12 md:grid-cols-2 md:gap-16">
-          {/* Left Visual Keepsake Frame */}
+        <div className="grid items-center gap-10 md:grid-cols-2 md:gap-14">
+          {/* Left Visual Card */}
           <motion.div
-            initial={{ opacity: 0, x: -20 }}
+            initial={{ opacity: 0, x: -16 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.45 }}
+            transition={{ duration: 0.4 }}
             className="relative"
           >
-            <div className="relative flex flex-col justify-between overflow-hidden rounded-[44px] border-[3px] border-[#24020E] bg-[#FCF9F4]/90 p-5 shadow-[10px_10px_0px_0px_#24020E] sm:p-7">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-[8px] rounded-[36px] border border-dashed border-[#24020E]/25"
-              />
-
-              <div className="relative z-10 aspect-[4/3] w-full overflow-hidden rounded-[30px] border-2 border-[#24020E]/20 bg-[#24020E]/5">
+            <div className="rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/85 p-4 shadow-sm backdrop-blur-md sm:p-5">
+              <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-[#24020E]/10 bg-white/70">
                 <motion.img
                   key={mainImage}
-                  initial={{ opacity: 0.7, scale: 0.98 }}
+                  initial={{ opacity: 0.75, scale: 0.99 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.35 }}
+                  transition={{ duration: 0.3 }}
                   src={mainImage}
                   alt={service.serviceName}
                   className="h-full w-full object-cover"
@@ -453,16 +497,16 @@ function ServiceDetailContent({ params }: PageProps) {
               </div>
 
               {galleryImages.length > 1 && (
-                <div className="relative z-10 mt-4 flex items-center gap-2.5 overflow-x-auto pb-1">
+                <div className="mt-3.5 flex items-center gap-2 overflow-x-auto pb-1">
                   {galleryImages.map((imgUrl, idx) => (
                     <button
                       key={`${imgUrl}-${idx}`}
                       type="button"
                       onClick={() => setActiveImageIndex(idx)}
-                      className={`h-14 w-18 shrink-0 overflow-hidden rounded-2xl border-2 transition ${
+                      className={`h-14 w-20 shrink-0 cursor-pointer overflow-hidden rounded-xl border transition ${
                         idx === activeImageIndex
-                          ? "border-[#C84B31] shadow-[2px_2px_0px_0px_#24020E]"
-                          : "border-[#24020E]/20 opacity-65 hover:opacity-100"
+                          ? "border-teal-700 ring-2 ring-teal-700/20"
+                          : "border-[#24020E]/15 opacity-70 hover:opacity-100"
                       }`}
                     >
                       <img
@@ -474,95 +518,110 @@ function ServiceDetailContent({ params }: PageProps) {
                   ))}
                 </div>
               )}
-            </div>
 
-            {/* Tilted Price Stamp Badge */}
-            <div className="z-20 -mt-5 ml-auto mr-2 flex h-22 w-22 rotate-6 flex-col items-center justify-center rounded-full border-[3px] border-[#24020E] bg-[#C84B31] text-[#FCF9F4] shadow-[5px_5px_0px_0px_#24020E] sm:absolute sm:-right-5 sm:-bottom-5 sm:mt-0 sm:mr-0 sm:h-24 sm:w-24">
-              <span className="text-[9px] font-black tracking-widest uppercase opacity-90">
-                From
-              </span>
-              <span className="font-[var(--font-cormorant)] text-lg font-black leading-tight sm:text-xl">
-                ৳{Number(service.price || 0).toLocaleString()}
-              </span>
+              <div className="mt-4 flex items-center justify-between border-t border-[#24020E]/10 pt-3.5">
+                <span className="text-[11px] font-bold tracking-wider text-[#24020E]/60 uppercase">
+                  Starting Package
+                </span>
+                <span className="font-[var(--font-cormorant)] text-2xl font-bold text-[#C84B31]">
+                  ৳{Number(service.price || 0).toLocaleString()}
+                </span>
+              </div>
             </div>
           </motion.div>
 
-          {/* Right Editorial Info Side */}
+          {/* Right Info Side */}
           <motion.div
-            initial={{ opacity: 0, x: 20 }}
+            initial={{ opacity: 0, x: 16 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.45 }}
-            className="space-y-6 md:space-y-7"
+            transition={{ duration: 0.4 }}
+            className="space-y-5 md:space-y-6"
           >
             <div>
-              <div className="mb-4 inline-flex items-center gap-2 rounded-full border-2 border-[#24020E] bg-[#C84B31] px-4 py-1.5 text-[10px] font-black tracking-widest text-[#FCF9F4] uppercase shadow-[3px_3px_0px_0px_#24020E]">
-                <Sparkles size={12} /> {service.category}
+              <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-teal-800/25 bg-[#E3F6F5]/85 px-3.5 py-1 text-[10px] font-bold tracking-wider text-teal-950 uppercase">
+                <Sparkles size={11} className="text-teal-700" />
+                <span>{service.category}</span>
               </div>
 
               <h1
                 style={{ fontFamily: "var(--font-curly), cursive" }}
-                className="mb-3 text-4xl leading-tight text-[#24020E] md:text-6xl"
+                className="text-4xl leading-tight text-[#24020E] md:text-5xl"
               >
                 {service.serviceName}
               </h1>
 
-              <div className="flex flex-wrap items-center gap-4 text-sm font-semibold text-[#24020E]/80">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#24020E]/20 bg-[#FCF9F4]/85 px-3.5 py-1">
-                  <MapPin className="h-4 w-4 text-[#C84B31]" />
+              <div className="mt-3 flex flex-wrap items-center gap-2.5 text-xs font-semibold text-[#24020E]/80">
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-[#24020E]/12 bg-white/80 px-3 py-1.5 backdrop-blur-xs">
+                  <MapPin className="h-3.5 w-3.5 text-teal-700" />
                   {service.location}
                 </span>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#24020E]/20 bg-[#FCF9F4]/85 px-3.5 py-1">
-                  <Store className="h-4 w-4 text-[#442D1C]" />
-                  {vendorDisplay}
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-[#24020E]/12 bg-[#FFF4F7]/85 px-3 py-1.5 backdrop-blur-xs">
+                  <Store className="h-3.5 w-3.5 text-[#C84B31]" />
+                  {ownerBusiness}
                 </span>
               </div>
-
-              <div className="mt-4 h-[3px] w-24 rounded-full bg-[#24020E]/20" />
             </div>
 
-            <p className="font-[var(--font-cormorant)] text-lg leading-relaxed font-medium text-[#24020E]/85 md:text-2xl">
+            <p className="font-[var(--font-cormorant)] text-lg leading-relaxed text-[#24020E]/85 md:text-xl">
               {service.description}
             </p>
 
-            {/* Keepsake Vendor & Note Box */}
-            <div className="relative overflow-hidden rounded-3xl border-2 border-dashed border-[#24020E]/30 bg-[#FCF9F4]/85 p-5 md:p-6">
-              <div className="pointer-events-none absolute -top-4 -right-4 rotate-12 opacity-10">
-                <Store size={64} />
+            {/* Clickable Service Owner / Vendor Profile Card */}
+            <Link
+              href={vendorProfileHref}
+              className="group flex items-center justify-between gap-4 rounded-2xl border border-[#24020E]/15 bg-[#E3F6F5]/65 p-4 shadow-2xs backdrop-blur-md transition hover:border-teal-800/35 hover:bg-[#E3F6F5]/90 hover:shadow-sm"
+            >
+              <div className="flex min-w-0 items-center gap-3.5">
+                <img
+                  src={ownerAvatar}
+                  alt={ownerName}
+                  onError={(e) => {
+                    e.currentTarget.src = buildDicebearAvatar(ownerSeed);
+                  }}
+                  className="h-12 w-12 shrink-0 rounded-xl border border-[#24020E]/15 bg-white object-cover"
+                />
+                <div className="min-w-0">
+                  <span className="block text-[10px] font-bold tracking-[0.18em] text-teal-800 uppercase">
+                    {isLinkedVendor ? "Service Owner" : "Default Studio Profile"}
+                  </span>
+                  <p className="truncate text-sm font-bold text-[#24020E] group-hover:text-teal-950">
+                    {ownerName}
+                  </p>
+                  <p className="truncate text-xs text-[#24020E]/65">
+                    {ownerBusiness}
+                  </p>
+                </div>
               </div>
-              <p className="mb-1 text-[10px] font-black tracking-[0.2em] text-[#C84B31] uppercase">
-                Vendor Keepsake Note:
-              </p>
-              <p className="font-[var(--font-cormorant)] text-lg italic text-[#24020E]/90">
-                &ldquo;Curated by {vendorDisplay} in {service.location} —
-                crafted to make your celebration feel timeless.&rdquo;
-              </p>
-            </div>
 
-            {/* Tactile Action Buttons */}
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-[#24020E]/15 bg-white/85 px-3 py-2 text-[11px] font-semibold text-[#24020E] transition group-hover:bg-[#24020E] group-hover:text-[#FCF9F4]">
+                <span>Vendor Profile</span>
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </span>
+            </Link>
+
+            {/* Booking Actions */}
             {!isBookable ? (
-              <div className="rounded-2xl border-2 border-[#24020E]/30 bg-[#FCF9F4] p-4 text-sm font-semibold text-[#24020E]">
+              <div className="rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/85 p-4 text-xs font-semibold text-[#24020E]">
                 This service is currently unavailable for booking.
               </div>
             ) : (
-              <div className="flex gap-4 pt-1">
+              <div className="flex gap-3 pt-1">
                 <button
                   type="button"
                   onClick={openBookingModal}
-                  className="flex flex-1 cursor-pointer items-center justify-center gap-3 rounded-[25px] border-2 border-[#24020E] bg-[#24020E] py-4 text-[#FCF9F4] shadow-[5px_5px_0px_0px_#C84B31] transition-all hover:scale-[1.02] active:scale-95 md:py-5"
+                  className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#24020E] py-3.5 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-sm transition hover:bg-teal-800 active:scale-[0.99]"
                 >
-                  <Calendar size={20} strokeWidth={2.5} />
-                  <span className="text-xs font-black tracking-[0.2em] uppercase">
-                    Request Booking
-                  </span>
+                  <Calendar size={16} />
+                  <span>Request Booking</span>
                 </button>
 
                 <button
                   type="button"
                   aria-label="Open booking modal"
                   onClick={openBookingModal}
-                  className="flex w-14 cursor-pointer items-center justify-center rounded-[25px] border-[3px] border-[#24020E] bg-[#FCF9F4] shadow-[4px_4px_0px_0px_#24020E] transition-colors hover:bg-[#FFEDF1] md:w-16"
+                  className="flex w-12 cursor-pointer items-center justify-center rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 shadow-2xs backdrop-blur-md transition hover:bg-[#E3F6F5]/75"
                 >
-                  <Heart size={20} className="text-[#C84B31]" />
+                  <Heart size={18} className="text-[#C84B31]" />
                 </button>
               </div>
             )}
@@ -582,21 +641,21 @@ function ServiceDetailContent({ params }: PageProps) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={closeBookingModal}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#24020E]/55 p-4 backdrop-blur-xs"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#24020E]/40 p-4 backdrop-blur-xs"
           >
             <motion.form
               noValidate
               onSubmit={handleBookingSubmit}
               onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.94, y: 14 }}
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-              className="relative max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-[34px] border-[3px] border-[#24020E] bg-[#FCF9F4] p-6 shadow-[10px_10px_0px_0px_#24020E] sm:p-7"
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="relative max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#24020E]/20 bg-[#FCF9F4]/95 p-6 shadow-xl backdrop-blur-md sm:p-7"
             >
-              <div className="flex items-start justify-between gap-3 border-b border-dashed border-[#24020E]/20 pb-3.5">
+              <div className="flex items-start justify-between gap-3 border-b border-[#24020E]/10 pb-3.5">
                 <div>
-                  <span className="inline-block rounded-full bg-[#FFEDF1] px-3 py-0.5 text-[10px] font-black tracking-wider text-[#24020E] uppercase">
+                  <span className="inline-block rounded-full border border-teal-800/20 bg-[#E3F6F5] px-3 py-0.5 text-[10px] font-bold tracking-wider text-teal-900 uppercase">
                     Pending Request
                   </span>
                   <h2
@@ -612,7 +671,7 @@ function ServiceDetailContent({ params }: PageProps) {
                   type="button"
                   onClick={closeBookingModal}
                   aria-label="Close booking modal"
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-[#24020E] bg-white text-[#24020E] transition hover:bg-[#24020E] hover:text-[#FCF9F4]"
+                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-[#24020E]/15 bg-[#FFF4F7] text-[#24020E] transition hover:bg-[#24020E] hover:text-[#FCF9F4]"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -621,7 +680,7 @@ function ServiceDetailContent({ params }: PageProps) {
               <div>
                 <label
                   htmlFor="eventDate"
-                  className="mb-1 block text-[10px] font-black tracking-widest uppercase"
+                  className="mb-1 block text-[10px] font-bold tracking-wider uppercase"
                 >
                   Event Date *
                 </label>
@@ -630,14 +689,14 @@ function ServiceDetailContent({ params }: PageProps) {
                   type="date"
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
-                  className="w-full rounded-2xl border-2 border-[#24020E]/25 bg-white px-4 py-2.5 text-sm text-[#24020E] focus:border-[#24020E] focus:outline-none"
+                  className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 px-3.5 py-2.5 text-sm text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="eventLocation"
-                  className="mb-1 block text-[10px] font-black tracking-widest uppercase"
+                  className="mb-1 block text-[10px] font-bold tracking-wider uppercase"
                 >
                   Event Location *
                 </label>
@@ -647,14 +706,14 @@ function ServiceDetailContent({ params }: PageProps) {
                   placeholder="Venue or city..."
                   value={eventLocation}
                   onChange={(e) => setEventLocation(e.target.value)}
-                  className="w-full rounded-2xl border-2 border-[#24020E]/25 bg-white px-4 py-2.5 text-sm text-[#24020E] focus:border-[#24020E] focus:outline-none"
+                  className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 px-3.5 py-2.5 text-sm text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
                 />
               </div>
 
               <div>
                 <label
                   htmlFor="message"
-                  className="mb-1 block text-[10px] font-black tracking-widest uppercase"
+                  className="mb-1 block text-[10px] font-bold tracking-wider uppercase"
                 >
                   Additional Message
                 </label>
@@ -664,20 +723,20 @@ function ServiceDetailContent({ params }: PageProps) {
                   placeholder="Tell the vendor about your ceremony, date details, or preferences..."
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
-                  className="w-full rounded-2xl border-2 border-[#24020E]/25 bg-white px-4 py-2.5 text-sm text-[#24020E] focus:border-[#24020E] focus:outline-none"
+                  className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 px-3.5 py-2.5 text-sm text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
                 />
               </div>
 
               {bookingFeedback && (
                 <div
-                  className={`flex items-start gap-2 rounded-2xl border-2 p-3.5 text-xs font-semibold sm:text-sm ${
+                  className={`flex items-start gap-2 rounded-xl border p-3.5 text-xs font-semibold sm:text-sm ${
                     bookingFeedback.type === "success"
-                      ? "border-emerald-700/40 bg-emerald-50 text-emerald-950"
-                      : "border-[#C84B31] bg-[#FFEDF1] text-[#24020E]"
+                      ? "border-teal-800/25 bg-[#E3F6F5] text-teal-950"
+                      : "border-[#C84B31]/30 bg-[#FFF4F7] text-[#C84B31]"
                   }`}
                 >
                   {bookingFeedback.type === "success" ? (
-                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-teal-700" />
                   ) : (
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#C84B31]" />
                   )}
@@ -690,7 +749,7 @@ function ServiceDetailContent({ params }: PageProps) {
                   type="button"
                   onClick={closeBookingModal}
                   disabled={submitting}
-                  className="cursor-pointer rounded-full border-2 border-[#24020E] bg-white px-5 py-3.5 text-xs font-black tracking-widest text-[#24020E] uppercase transition hover:bg-[#FFEDF1] disabled:opacity-50"
+                  className="cursor-pointer rounded-xl border border-[#24020E]/15 bg-white/80 px-5 py-3 text-xs font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#FFF4F7] disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -698,7 +757,7 @@ function ServiceDetailContent({ params }: PageProps) {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-full border-2 border-[#24020E] bg-[#C84B31] py-3.5 text-xs font-black tracking-widest text-[#FCF9F4] uppercase shadow-[4px_4px_0px_0px_#24020E] transition hover:opacity-95 disabled:opacity-60"
+                  className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#24020E] py-3 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-sm transition hover:bg-teal-800 disabled:opacity-60"
                 >
                   {submitting ? (
                     <>
@@ -707,7 +766,7 @@ function ServiceDetailContent({ params }: PageProps) {
                     </>
                   ) : (
                     <>
-                      <Send className="h-4 w-4" />
+                      <Send className="h-4 w-4 text-[#99F6E4]" />
                       <span>Confirm Booking Request</span>
                     </>
                   )}
@@ -723,19 +782,7 @@ function ServiceDetailContent({ params }: PageProps) {
 
 export default function ServiceDetailPage({ params }: PageProps) {
   return (
-    <Suspense
-      fallback={
-        <div
-          style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
-          className="flex min-h-screen flex-col items-center justify-center px-6 pt-28"
-        >
-          <Loader2 className="mb-4 h-10 w-10 animate-spin text-[#C84B31]" />
-          <p className="text-[11px] font-black tracking-[0.28em] uppercase">
-            Loading keepsake...
-          </p>
-        </div>
-      }
-    >
+    <Suspense fallback={<ServiceDetailLoadingScreen />}>
       <ServiceDetailContent params={params} />
     </Suspense>
   );

@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { Suspense, useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuth } from "../../../../app/context/AuthContext";
+import { useAuth } from "../../../context/AuthContext";
 import { useRouter, useParams } from "next/navigation";
 import {
   LogOut,
@@ -24,7 +24,7 @@ import {
   Sparkles,
   Check,
 } from "lucide-react";
-import api from "../../../../lib/axios.ts";
+import api from "../../../../lib/axios";
 
 interface CustomerProfileInfo {
   _id?: string;
@@ -127,7 +127,27 @@ async function bakeFramedImageToDataUrl(
   });
 }
 
-export default function CustomerProfilePage() {
+function ProfileLoadingFallback() {
+  return (
+    <main
+      style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
+      className="flex min-h-screen flex-col items-center justify-center gap-3 px-4"
+    >
+      <motion.div
+        animate={{ scale: [1, 1.06, 1], rotate: [0, 4, -4, 0] }}
+        transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+        className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#24020E]/15 bg-[#E3F6F5] shadow-sm"
+      >
+        <Sparkles className="h-6 w-6 text-teal-700" />
+      </motion.div>
+      <p className="animate-pulse text-xs font-semibold tracking-[0.2em] text-[#24020E]/60 uppercase">
+        Loading Customer Profile...
+      </p>
+    </main>
+  );
+}
+
+function CustomerProfileContent() {
   const { user, isLoading, logout, setUser } = useAuth() as {
     user: any;
     isLoading: boolean;
@@ -265,23 +285,7 @@ export default function CustomerProfilePage() {
   }, [profileCustomerId, isOwner]);
 
   if (isLoading) {
-    return (
-      <main
-        style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
-        className="flex min-h-screen flex-col items-center justify-center gap-4 px-4"
-      >
-        <motion.div
-          animate={{ scale: [1, 1.06, 1], rotate: [0, 4, -4, 0] }}
-          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-          className="flex h-14 w-14 items-center justify-center rounded-full border-[2.5px] border-[#24020E] bg-[#FCF9F4] shadow-[4px_4px_0px_0px_#24020E]"
-        >
-          <Sparkles className="h-6 w-6 text-[#C84B31]" />
-        </motion.div>
-        <p className="animate-pulse text-[10px] font-black tracking-[0.22em] text-[#24020E]/65 uppercase">
-          Loading Customer Profile...
-        </p>
-      </main>
-    );
+    return <ProfileLoadingFallback />;
   }
 
   const activeSource = isOwner ? user : publicCustomerInfo;
@@ -461,25 +465,33 @@ export default function CustomerProfilePage() {
 
   return (
     <main
-      style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
+      style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
       className="relative min-h-screen overflow-x-clip px-4 pt-28 pb-20 sm:px-6 sm:pt-32"
     >
-      {/* Ambient soft blush & cream glows */}
+      {/* Slim Grid Overlay + Subtle Blush & Mint Glows */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
       >
         <div
           style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(36, 2, 14, 0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(36, 2, 14, 0.04) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+          className="absolute inset-0"
+        />
+        <div
+          style={{
             background:
-              "radial-gradient(circle, rgba(252, 249, 244, 0.9) 0%, rgba(252, 249, 244, 0.25) 60%, transparent 78%)",
+              "radial-gradient(circle, rgba(255, 224, 232, 0.6) 0%, transparent 72%)",
           }}
           className="absolute -top-24 -left-24 h-[420px] w-[420px] rounded-full blur-3xl"
         />
         <div
           style={{
             background:
-              "radial-gradient(circle, rgba(232, 155, 174, 0.34) 0%, rgba(217, 122, 148, 0.14) 60%, transparent 78%)",
+              "radial-gradient(circle, rgba(186, 238, 233, 0.54) 0%, transparent 72%)",
           }}
           className="absolute right-[-90px] bottom-8 h-[440px] w-[440px] rounded-full blur-3xl"
         />
@@ -492,16 +504,16 @@ export default function CustomerProfilePage() {
             initial={{ opacity: 0, y: -24, x: "-50%" }}
             animate={{ opacity: 1, y: 0, x: "-50%" }}
             exit={{ opacity: 0, y: -16, x: "-50%" }}
-            className="fixed top-24 left-1/2 z-50 flex w-[92vw] max-w-md items-center gap-2.5 rounded-full border-[2.5px] border-[#24020E] bg-[#FCF9F4] px-5 py-3 shadow-[6px_6px_0px_0px_#24020E]"
+            className="fixed top-24 left-1/2 z-50 flex w-[92vw] max-w-md items-center gap-2.5 rounded-2xl border border-[#24020E]/15 bg-white/90 px-5 py-3 shadow-md backdrop-blur-md"
           >
             {toastMessage.type === "loading" ? (
-              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#C84B31]" />
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-teal-700" />
             ) : toastMessage.type === "success" ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-700" />
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-teal-700" />
             ) : (
               <AlertCircle className="h-4 w-4 shrink-0 text-[#C84B31]" />
             )}
-            <p className="text-xs font-bold tracking-wide text-[#24020E]">
+            <p className="text-xs font-semibold tracking-wide text-[#24020E]">
               {toastMessage.text}
             </p>
           </motion.div>
@@ -511,15 +523,10 @@ export default function CustomerProfilePage() {
       <div className="relative z-10 mx-auto max-w-5xl">
         <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
           {/* LEFT CARD: WEDPLAN KEEPSAKE IDENTITY CARD */}
-          <div className="relative overflow-hidden rounded-[36px] border-[3px] border-[#24020E] bg-[#FCF9F4] p-7 shadow-[8px_8px_0px_0px_#24020E] lg:col-span-5">
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-[7px] rounded-[29px] border border-dashed border-[#24020E]/20"
-            />
-
-            <div className="relative z-10 flex flex-col items-center space-y-3 text-center">
+          <div className="rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/85 p-6 shadow-sm backdrop-blur-md sm:p-7 lg:col-span-5">
+            <div className="flex flex-col items-center space-y-3.5 text-center">
               <div className="relative">
-                <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-[26px] border-[3px] border-[#24020E] bg-[#FFEDF1] shadow-[4px_4px_0px_0px_#24020E]">
+                <div className="flex h-28 w-28 items-center justify-center overflow-hidden rounded-2xl border border-[#24020E]/20 bg-[#E3F6F5] shadow-sm">
                   <img
                     src={displayProfilePicture}
                     alt={displayProfileName}
@@ -532,13 +539,13 @@ export default function CustomerProfilePage() {
                     }}
                   />
                 </div>
-                <span className="absolute -right-2 -bottom-1.5 inline-flex items-center gap-1 rounded-full border-2 border-[#24020E] bg-[#C84B31] px-2.5 py-0.5 text-[10px] font-black tracking-widest text-[#FCF9F4] uppercase shadow-[2px_2px_0px_0px_#24020E]">
-                  <Heart className="h-3 w-3 fill-current" />
+                <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-teal-800/25 bg-[#E3F6F5] px-3 py-0.5 text-[10px] font-bold tracking-widest text-teal-900 uppercase">
+                  <Heart className="h-3 w-3 fill-[#C95B78] text-[#C95B78]" />
                   <span>{displayProfileRole}</span>
                 </span>
               </div>
 
-              <div className="w-full space-y-1 pt-1">
+              <div className="w-full space-y-1">
                 <h1
                   style={{ fontFamily: "var(--font-curly), cursive" }}
                   className="text-3xl leading-tight text-[#24020E] sm:text-4xl"
@@ -552,13 +559,13 @@ export default function CustomerProfilePage() {
                   </p>
                 )}
 
-                <p className="pt-1 text-[10px] font-black tracking-[0.2em] text-[#24020E]/55 uppercase">
+                <p className="pt-1 text-[10px] font-bold tracking-[0.2em] text-teal-800 uppercase">
                   {isOwner ? "WEDPLAN MEMBER VIEW" : "CUSTOMER PROFILE"}
                 </p>
               </div>
 
               {isOwner && (
-                <div className="flex w-full flex-col gap-3 pt-3">
+                <div className="flex w-full flex-col gap-2.5 pt-2">
                   <button
                     type="button"
                     onClick={() => {
@@ -568,9 +575,9 @@ export default function CustomerProfilePage() {
                         setIsEditing(true);
                       }
                     }}
-                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-[2.5px] border-[#24020E] bg-[#FCF9F4] px-5 py-3 text-xs font-black tracking-widest text-[#24020E] uppercase shadow-[4px_4px_0px_0px_#24020E] transition hover:bg-[#FFEDF1] active:translate-x-[1px] active:translate-y-[1px]"
+                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#24020E]/20 bg-[#E3F6F5]/85 px-5 py-3 text-xs font-semibold tracking-wider text-teal-950 uppercase shadow-2xs transition hover:bg-[#E3F6F5]"
                   >
-                    <SlidersHorizontal className="h-3.5 w-3.5 text-[#C84B31]" />
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-teal-700" />
                     <span>
                       {isEditing
                         ? "EXIT EDIT MODE"
@@ -581,16 +588,16 @@ export default function CustomerProfilePage() {
                   <button
                     type="button"
                     onClick={() => router.push("/dashboard/customer")}
-                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-[2.5px] border-[#24020E] bg-[#C84B31] px-5 py-3 text-xs font-black tracking-widest text-[#FCF9F4] uppercase shadow-[4px_4px_0px_0px_#24020E] transition hover:opacity-95 active:translate-x-[1px] active:translate-y-[1px]"
+                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#24020E] px-5 py-3 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-sm transition hover:bg-teal-800"
                   >
-                    <CalendarHeart className="h-3.5 w-3.5" />
+                    <CalendarHeart className="h-3.5 w-3.5 text-[#99F6E4]" />
                     <span>MY DASHBOARD</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={logout}
-                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-2 border-[#24020E]/35 bg-[#FFEDF1]/85 px-5 py-3 text-xs font-black tracking-widest text-[#C84B31] uppercase transition hover:border-[#24020E] hover:bg-[#FFEDF1]"
+                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#C84B31]/25 bg-white/80 px-5 py-3 text-xs font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-white"
                   >
                     <LogOut className="h-3.5 w-3.5" />
                     <span>SIGN OUT</span>
@@ -609,296 +616,289 @@ export default function CustomerProfilePage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="relative overflow-hidden rounded-[36px] border-[3px] border-[#24020E] bg-[#FCF9F4] p-6 shadow-[8px_8px_0px_0px_#24020E] sm:p-8"
+                  className="rounded-2xl border border-[#24020E]/15 bg-white/75 p-6 shadow-sm backdrop-blur-md sm:p-8"
                 >
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-[7px] rounded-[29px] border border-dashed border-[#24020E]/20"
-                  />
-
-                  <div className="relative z-10">
-                    <div className="mb-5 flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-black tracking-widest text-[#C84B31] uppercase">
-                        Customer Account Settings
-                      </span>
-                      <button
-                        type="button"
-                        onClick={exitEditingMode}
-                        className="inline-flex cursor-pointer items-center gap-1 rounded-full border-2 border-[#24020E] bg-white px-3 py-1 text-[10px] font-black tracking-wider text-[#24020E] uppercase shadow-[2px_2px_0px_0px_#24020E] hover:bg-[#FFEDF1]"
-                      >
-                        <ArrowLeft className="h-3 w-3 text-[#C84B31]" />
-                        <span>Exit Edit Mode</span>
-                      </button>
-                    </div>
-
-                    <form
-                      noValidate
-                      onSubmit={handleUpdateProfile}
-                      className="space-y-4"
+                  <div className="mb-5 flex items-center justify-between gap-2 border-b border-[#24020E]/10 pb-3.5">
+                    <span className="text-[11px] font-bold tracking-widest text-teal-800 uppercase">
+                      Customer Account Settings
+                    </span>
+                    <button
+                      type="button"
+                      onClick={exitEditingMode}
+                      className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-[#24020E]/15 bg-[#FFF4F7] px-3 py-1 text-[10px] font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#E3F6F5]/75"
                     >
-                      {/* Avatar URL + Zoom/Pan Framing */}
-                      <div className="space-y-3 rounded-[24px] border-2 border-dashed border-[#24020E]/25 bg-white/80 p-4">
-                        <div className="flex flex-col items-center gap-3.5 sm:flex-row sm:items-start">
-                          <div
-                            onPointerDown={handlePointerDown}
-                            onPointerMove={handlePointerMove}
-                            onPointerUp={handlePointerUp}
-                            onPointerCancel={handlePointerUp}
-                            title="Drag to move avatar"
-                            className="relative h-24 w-24 shrink-0 cursor-grab touch-none overflow-hidden rounded-[22px] border-[3px] border-[#24020E] bg-[#FFEDF1] shadow-[3px_3px_0px_0px_#24020E] active:cursor-grabbing sm:h-20 sm:w-20"
-                          >
-                            <img
-                              src={displayProfilePicture}
-                              alt="Avatar preview"
-                              draggable={false}
-                              style={{
-                                transform: `translate(${framing.offsetX}%, ${framing.offsetY}%) scale(${framing.zoom})`,
-                                transformOrigin: "center center",
-                              }}
-                              className="h-full w-full object-cover select-none"
-                              onError={(e) => {
-                                e.currentTarget.src = buildDicebearAvatar(
-                                  formData.name || "Customer"
-                                );
-                              }}
-                            />
-                          </div>
+                      <ArrowLeft className="h-3 w-3 text-[#C84B31]" />
+                      <span>Exit Edit Mode</span>
+                    </button>
+                  </div>
 
-                          <div className="w-full min-w-0 flex-1 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <label className="flex items-center gap-1 text-[10px] font-black tracking-widest text-[#24020E] uppercase">
-                                <ImagePlus className="h-3.5 w-3.5 text-[#C84B31]" />
-                                <span>Profile Image URL</span>
-                              </label>
-                              {formData.image && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setFormData((prev) => ({
-                                      ...prev,
-                                      image: "",
-                                    }));
-                                    setFraming(DEFAULT_FRAMING);
-                                  }}
-                                  className="inline-flex cursor-pointer items-center gap-0.5 text-[10px] font-bold text-[#C84B31] hover:underline"
-                                >
-                                  <X className="h-3 w-3" />
-                                  <span>Clear</span>
-                                </button>
-                              )}
-                            </div>
+                  <form
+                    noValidate
+                    onSubmit={handleUpdateProfile}
+                    className="space-y-4"
+                  >
+                    {/* Avatar URL + Zoom/Pan Framing */}
+                    <div className="space-y-3 rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/80 p-4 backdrop-blur-xs">
+                      <div className="flex flex-col items-center gap-3.5 sm:flex-row sm:items-start">
+                        <div
+                          onPointerDown={handlePointerDown}
+                          onPointerMove={handlePointerMove}
+                          onPointerUp={handlePointerUp}
+                          onPointerCancel={handlePointerUp}
+                          title="Drag to move avatar"
+                          className="relative h-24 w-24 shrink-0 cursor-grab touch-none overflow-hidden rounded-2xl border border-[#24020E]/20 bg-[#E3F6F5] shadow-2xs active:cursor-grabbing sm:h-20 sm:w-20"
+                        >
+                          <img
+                            src={displayProfilePicture}
+                            alt="Avatar preview"
+                            draggable={false}
+                            style={{
+                              transform: `translate(${framing.offsetX}%, ${framing.offsetY}%) scale(${framing.zoom})`,
+                              transformOrigin: "center center",
+                            }}
+                            className="h-full w-full object-cover select-none"
+                            onError={(e) => {
+                              e.currentTarget.src = buildDicebearAvatar(
+                                formData.name || "Customer"
+                              );
+                            }}
+                          />
+                        </div>
 
-                            <input
-                              type="url"
-                              value={formData.image}
-                              onChange={(e) =>
-                                setFormData({
-                                  ...formData,
-                                  image: e.target.value,
-                                })
-                              }
-                              placeholder="https://example.com/your-photo.jpg"
-                              className="w-full rounded-2xl border-2 border-[#24020E]/25 bg-white px-3.5 py-2 text-xs font-semibold text-[#24020E] focus:border-[#24020E] focus:outline-none"
-                            />
-
-                            {isFramingAdjusted && (
+                        <div className="w-full min-w-0 flex-1 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-[#24020E] uppercase">
+                              <ImagePlus className="h-3.5 w-3.5 text-teal-800" />
+                              <span>Profile Image URL</span>
+                            </label>
+                            {formData.image && (
                               <button
                                 type="button"
-                                onClick={() => setFraming(DEFAULT_FRAMING)}
-                                className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-[#24020E] bg-[#FCF9F4] px-3 py-1 text-[10px] font-black tracking-wider text-[#24020E] uppercase"
+                                onClick={() => {
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    image: "",
+                                  }));
+                                  setFraming(DEFAULT_FRAMING);
+                                }}
+                                className="inline-flex cursor-pointer items-center gap-0.5 text-[10px] font-semibold text-[#C84B31] hover:underline"
                               >
-                                <RotateCcw className="h-3 w-3 text-[#C84B31]" />
-                                <span>Reset Framing</span>
+                                <X className="h-3 w-3" />
+                                <span>Clear</span>
                               </button>
                             )}
                           </div>
-                        </div>
 
-                        <div className="space-y-2.5 border-t border-dashed border-[#24020E]/15 pt-3">
+                          <input
+                            type="url"
+                            value={formData.image}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                image: e.target.value,
+                              })
+                            }
+                            placeholder="https://example.com/your-photo.jpg"
+                            className="w-full rounded-xl border border-[#24020E]/15 bg-white/85 px-3.5 py-2 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                          />
+
+                          {isFramingAdjusted && (
+                            <button
+                              type="button"
+                              onClick={() => setFraming(DEFAULT_FRAMING)}
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#24020E]/15 bg-white/85 px-3 py-1 text-[10px] font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#E3F6F5]/75"
+                            >
+                              <RotateCcw className="h-3 w-3 text-[#C84B31]" />
+                              <span>Reset Framing</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="space-y-2.5 border-t border-[#24020E]/10 pt-3">
+                        <label className="block">
+                          <span className="flex justify-between text-[11px] font-semibold">
+                            <span className="inline-flex items-center gap-1">
+                              <ZoomIn className="h-3 w-3 text-teal-800" />
+                              <span>Zoom</span>
+                            </span>
+                            <span>{framing.zoom.toFixed(2)}x</span>
+                          </span>
+                          <input
+                            type="range"
+                            min={1}
+                            max={2.5}
+                            step={0.05}
+                            value={framing.zoom}
+                            onChange={(e) =>
+                              setFraming((prev) => ({
+                                ...prev,
+                                zoom: Number(e.target.value),
+                              }))
+                            }
+                            className="mt-1 w-full cursor-pointer accent-teal-700"
+                          />
+                        </label>
+
+                        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                           <label className="block">
                             <span className="flex justify-between text-[11px] font-semibold">
                               <span className="inline-flex items-center gap-1">
-                                <ZoomIn className="h-3 w-3 text-[#C84B31]" />
-                                <span>Zoom</span>
+                                <Move className="h-3 w-3 text-[#24020E]" />
+                                <span>Pan X</span>
                               </span>
-                              <span>{framing.zoom.toFixed(2)}x</span>
+                              <span>{framing.offsetX}%</span>
                             </span>
                             <input
                               type="range"
-                              min={1}
-                              max={2.5}
-                              step={0.05}
-                              value={framing.zoom}
+                              min={-45}
+                              max={45}
+                              step={1}
+                              value={framing.offsetX}
                               onChange={(e) =>
                                 setFraming((prev) => ({
                                   ...prev,
-                                  zoom: Number(e.target.value),
+                                  offsetX: Number(e.target.value),
                                 }))
                               }
-                              className="mt-1 w-full cursor-pointer accent-[#C84B31]"
+                              className="mt-1 w-full cursor-pointer accent-[#24020E]"
                             />
                           </label>
 
-                          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                            <label className="block">
-                              <span className="flex justify-between text-[11px] font-semibold">
-                                <span className="inline-flex items-center gap-1">
-                                  <Move className="h-3 w-3 text-[#24020E]" />
-                                  <span>Pan X</span>
-                                </span>
-                                <span>{framing.offsetX}%</span>
+                          <label className="block">
+                            <span className="flex justify-between text-[11px] font-semibold">
+                              <span className="inline-flex items-center gap-1">
+                                <Move className="h-3 w-3 text-[#24020E]" />
+                                <span>Pan Y</span>
                               </span>
-                              <input
-                                type="range"
-                                min={-45}
-                                max={45}
-                                step={1}
-                                value={framing.offsetX}
-                                onChange={(e) =>
-                                  setFraming((prev) => ({
-                                    ...prev,
-                                    offsetX: Number(e.target.value),
-                                  }))
-                                }
-                                className="mt-1 w-full cursor-pointer accent-[#24020E]"
-                              />
-                            </label>
-
-                            <label className="block">
-                              <span className="flex justify-between text-[11px] font-semibold">
-                                <span className="inline-flex items-center gap-1">
-                                  <Move className="h-3 w-3 text-[#24020E]" />
-                                  <span>Pan Y</span>
-                                </span>
-                                <span>{framing.offsetY}%</span>
-                              </span>
-                              <input
-                                type="range"
-                                min={-45}
-                                max={45}
-                                step={1}
-                                value={framing.offsetY}
-                                onChange={(e) =>
-                                  setFraming((prev) => ({
-                                    ...prev,
-                                    offsetY: Number(e.target.value),
-                                  }))
-                                }
-                                className="mt-1 w-full cursor-pointer accent-[#24020E]"
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Name */}
-                      <div>
-                        <label className="mb-1 block text-[10px] font-black tracking-widest uppercase">
-                          Full Name *
-                        </label>
-                        <input
-                          type="text"
-                          value={formData.name}
-                          onChange={(e) =>
-                            setFormData({ ...formData, name: e.target.value })
-                          }
-                          placeholder="Your full name"
-                          className="w-full rounded-2xl border-2 border-[#24020E]/25 bg-white px-4 py-2.5 text-sm text-[#24020E] focus:border-[#24020E] focus:outline-none"
-                        />
-                      </div>
-
-                      {/* Email (Read-only) */}
-                      <div>
-                        <label className="mb-1 block text-[10px] font-black tracking-widest uppercase">
-                          Email Address
-                        </label>
-                        <input
-                          type="email"
-                          value={user?.email || ""}
-                          disabled
-                          className="w-full cursor-not-allowed rounded-2xl border-2 border-[#24020E]/15 bg-[#FFEDF1]/60 px-4 py-2.5 text-sm text-[#24020E]/65 select-all"
-                        />
-                      </div>
-
-                      {/* Optional Password Update */}
-                      <div className="grid grid-cols-1 gap-3 border-t border-dashed border-[#24020E]/20 pt-4 sm:grid-cols-2">
-                        <div>
-                          <label className="mb-1 block text-[10px] font-black tracking-widest uppercase">
-                            New Password
-                          </label>
-                          <div className="relative">
-                            <Lock className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[#24020E]/50" />
+                              <span>{framing.offsetY}%</span>
+                            </span>
                             <input
-                              type={showPassword ? "text" : "password"}
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              placeholder="Leave blank to keep"
-                              className="w-full rounded-2xl border-2 border-[#24020E]/25 bg-white py-2.5 pr-10 pl-10 text-xs text-[#24020E] focus:border-[#24020E] focus:outline-none"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPassword(!showPassword)}
-                              className="absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer text-[#24020E]/60 hover:text-[#24020E]"
-                            >
-                              {showPassword ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-[10px] font-black tracking-widest uppercase">
-                            Confirm Password
-                          </label>
-                          <div className="relative">
-                            <Lock className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[#24020E]/50" />
-                            <input
-                              type={showConfirmPassword ? "text" : "password"}
-                              value={confirmPassword}
+                              type="range"
+                              min={-45}
+                              max={45}
+                              step={1}
+                              value={framing.offsetY}
                               onChange={(e) =>
-                                setConfirmPassword(e.target.value)
+                                setFraming((prev) => ({
+                                  ...prev,
+                                  offsetY: Number(e.target.value),
+                                }))
                               }
-                              placeholder="Repeat new password"
-                              className="w-full rounded-2xl border-2 border-[#24020E]/25 bg-white py-2.5 pr-10 pl-10 text-xs text-[#24020E] focus:border-[#24020E] focus:outline-none"
+                              className="mt-1 w-full cursor-pointer accent-[#24020E]"
                             />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setShowConfirmPassword(!showConfirmPassword)
-                              }
-                              className="absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer text-[#24020E]/60 hover:text-[#24020E]"
-                            >
-                              {showConfirmPassword ? (
-                                <EyeOff className="h-4 w-4" />
-                              ) : (
-                                <Eye className="h-4 w-4" />
-                              )}
-                            </button>
-                          </div>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Name */}
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold tracking-wider uppercase">
+                        Full Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.name}
+                        onChange={(e) =>
+                          setFormData({ ...formData, name: e.target.value })
+                        }
+                        placeholder="Your full name"
+                        className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 px-4 py-2.5 text-sm text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                      />
+                    </div>
+
+                    {/* Email (Read-only) */}
+                    <div>
+                      <label className="mb-1 block text-[10px] font-bold tracking-wider uppercase">
+                        Email Address
+                      </label>
+                      <input
+                        type="email"
+                        value={user?.email || ""}
+                        disabled
+                        className="w-full cursor-not-allowed rounded-xl border border-[#24020E]/10 bg-[#E3F6F5]/55 px-4 py-2.5 text-sm text-[#24020E]/60 select-all"
+                      />
+                    </div>
+
+                    {/* Optional Password Update */}
+                    <div className="grid grid-cols-1 gap-3 border-t border-[#24020E]/10 pt-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold tracking-wider uppercase">
+                          New Password
+                        </label>
+                        <div className="relative">
+                          <Lock className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[#24020E]/45" />
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Leave blank to keep"
+                            className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 py-2.5 pr-10 pl-10 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer text-[#24020E]/55 hover:text-[#24020E]"
+                          >
+                            {showPassword ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
                         </div>
                       </div>
 
-                      {isFormChanged && (
-                        <button
-                          type="submit"
-                          disabled={updating}
-                          className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-full border-[2.5px] border-[#24020E] bg-[#24020E] py-3 text-xs font-black tracking-widest text-[#FCF9F4] uppercase shadow-[4px_4px_0px_0px_#C84B31] transition hover:opacity-95 disabled:opacity-60"
-                        >
-                          {updating ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Check className="h-4 w-4 text-[#E8D1A7]" />
-                          )}
-                          <span>
-                            {updating ? "Saving Changes..." : "Save Changes"}
-                          </span>
-                        </button>
-                      )}
-                    </form>
-                  </div>
+                      <div>
+                        <label className="mb-1 block text-[10px] font-bold tracking-wider uppercase">
+                          Confirm Password
+                        </label>
+                        <div className="relative">
+                          <Lock className="pointer-events-none absolute top-1/2 left-3.5 h-4 w-4 -translate-y-1/2 text-[#24020E]/45" />
+                          <input
+                            type={showConfirmPassword ? "text" : "password"}
+                            value={confirmPassword}
+                            onChange={(e) =>
+                              setConfirmPassword(e.target.value)
+                            }
+                            placeholder="Repeat new password"
+                            className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 py-2.5 pr-10 pl-10 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setShowConfirmPassword(!showConfirmPassword)
+                            }
+                            className="absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer text-[#24020E]/55 hover:text-[#24020E]"
+                          >
+                            {showConfirmPassword ? (
+                              <EyeOff className="h-4 w-4" />
+                            ) : (
+                              <Eye className="h-4 w-4" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {isFormChanged && (
+                      <button
+                        type="submit"
+                        disabled={updating}
+                        className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#24020E] py-3 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-sm transition hover:bg-teal-800 disabled:opacity-60"
+                      >
+                        {updating ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4 text-[#99F6E4]" />
+                        )}
+                        <span>
+                          {updating ? "Saving Changes..." : "Save Changes"}
+                        </span>
+                      </button>
+                    )}
+                  </form>
                 </motion.div>
               ) : (
                 <motion.div
@@ -906,26 +906,21 @@ export default function CustomerProfilePage() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="relative overflow-hidden rounded-[36px] border-[3px] border-[#24020E] bg-[#FCF9F4] p-6 shadow-[8px_8px_0px_0px_#24020E] sm:p-8"
+                  className="rounded-2xl border border-[#24020E]/15 bg-white/75 p-6 shadow-sm backdrop-blur-md sm:p-8"
                 >
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-[7px] rounded-[29px] border border-dashed border-[#24020E]/20"
-                  />
-
-                  <div className="relative z-10 space-y-5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-black tracking-widest text-[#C84B31] uppercase">
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between border-b border-[#24020E]/10 pb-3.5">
+                      <span className="text-[11px] font-bold tracking-widest text-teal-800 uppercase">
                         Customer Account Details
                       </span>
-                      <span className="rounded-full border-2 border-[#24020E] bg-[#FFEDF1] px-3 py-0.5 text-[10px] font-black tracking-wider uppercase">
+                      <span className="rounded-full border border-teal-800/25 bg-[#E3F6F5] px-3 py-0.5 text-[10px] font-bold tracking-wider text-teal-950 uppercase">
                         {displayProfileRole}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 rounded-[24px] border-2 border-dashed border-[#24020E]/20 bg-white/80 p-5 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-4 rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/80 p-5 sm:grid-cols-2">
                       <div>
-                        <span className="block text-[10px] font-black tracking-widest text-[#24020E]/55 uppercase">
+                        <span className="block text-[10px] font-bold tracking-widest text-[#24020E]/55 uppercase">
                           Full Name
                         </span>
                         <span className="mt-1 block text-sm font-bold text-[#24020E]">
@@ -934,16 +929,16 @@ export default function CustomerProfilePage() {
                       </div>
 
                       <div>
-                        <span className="block text-[10px] font-black tracking-widest text-[#24020E]/55 uppercase">
+                        <span className="block text-[10px] font-bold tracking-widest text-[#24020E]/55 uppercase">
                           Account Type
                         </span>
-                        <span className="mt-1 block text-sm font-bold text-[#C84B31] uppercase">
+                        <span className="mt-1 block text-sm font-bold text-teal-800 uppercase">
                           {displayProfileRole}
                         </span>
                       </div>
 
                       <div className="sm:col-span-2">
-                        <span className="block text-[10px] font-black tracking-widest text-[#24020E]/55 uppercase">
+                        <span className="block text-[10px] font-bold tracking-widest text-[#24020E]/55 uppercase">
                           Email Address
                         </span>
                         <span className="mt-1 block text-sm font-semibold break-all text-[#24020E] select-all">
@@ -959,5 +954,13 @@ export default function CustomerProfilePage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function CustomerProfilePage() {
+  return (
+    <Suspense fallback={<ProfileLoadingFallback />}>
+      <CustomerProfileContent />
+    </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { Suspense, useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -133,11 +133,7 @@ async function bakeFramedImageToDataUrl(
   framing: ImageFraming,
   outputSize = 400
 ): Promise<string | null> {
-  if (
-    framing.zoom === 1 &&
-    framing.offsetX === 0 &&
-    framing.offsetY === 0
-  ) {
+  if (framing.zoom === 1 && framing.offsetX === 0 && framing.offsetY === 0) {
     return null;
   }
 
@@ -186,10 +182,26 @@ async function bakeFramedImageToDataUrl(
   });
 }
 
-export default function VendorProfilePage() {
+function VendorProfileLoadingFallback() {
+  return (
+    <div
+      style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
+      className="flex min-h-screen flex-col items-center justify-center gap-3 pt-28"
+    >
+      <div className="text-3xl">✨</div>
+      <p className="text-xs font-semibold tracking-[0.2em] text-[#24020E]/60 uppercase">
+        Opening Vendor Atelier...
+      </p>
+    </div>
+  );
+}
+
+function VendorProfileContent() {
   const router = useRouter();
   const params = useParams<{ id?: string }>();
 
+  // Deterministic initial state across SSR and initial client hydration
+  const [mounted, setMounted] = useState(false);
   const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
 
@@ -267,8 +279,13 @@ export default function VendorProfilePage() {
     setIsEditing(false);
   };
 
-  // Load current signed-in user from storage/API
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Load current signed-in user from storage/API after mount
+  useEffect(() => {
+    if (!mounted) return;
     let active = true;
 
     async function syncSession() {
@@ -311,11 +328,11 @@ export default function VendorProfilePage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [mounted]);
 
   // Populate owner edit form
   useEffect(() => {
-    if (!authLoaded) return;
+    if (!mounted || !authLoaded) return;
 
     if (!currentUser && !params?.id) {
       router.replace("/sign-in");
@@ -325,11 +342,11 @@ export default function VendorProfilePage() {
     if (currentUser && isOwner) {
       resetEditFormToSaved(currentUser);
     }
-  }, [authLoaded, currentUser, isOwner, params?.id, router]);
+  }, [mounted, authLoaded, currentUser, isOwner, params?.id, router]);
 
   // Fetch public vendor info (when visiting someone else's vendor page) & placeholder services
   useEffect(() => {
-    if (!vendorId) return;
+    if (!mounted || !vendorId) return;
     let active = true;
 
     async function loadVendorAndServices() {
@@ -367,7 +384,7 @@ export default function VendorProfilePage() {
     return () => {
       active = false;
     };
-  }, [vendorId, isOwner]);
+  }, [mounted, vendorId, isOwner]);
 
   const handleLogout = () => {
     if (typeof window !== "undefined") {
@@ -464,24 +481,8 @@ export default function VendorProfilePage() {
     sortBy,
   ]);
 
-  if (!authLoaded) {
-    return (
-      <div
-        style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
-        className="flex min-h-screen flex-col items-center justify-center gap-4 pt-28"
-      >
-        <motion.div
-          animate={{ scale: [1, 1.06, 1], rotate: [0, 5, -5, 0] }}
-          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-          className="text-4xl"
-        >
-          ✨
-        </motion.div>
-        <p className="animate-pulse text-[10px] font-black tracking-[0.2em] text-[#24020E]/50 uppercase">
-          Opening Vendor Atelier...
-        </p>
-      </div>
-    );
+  if (!mounted || !authLoaded) {
+    return <VendorProfileLoadingFallback />;
   }
 
   const activeSource = isOwner ? currentUser : publicVendorInfo;
@@ -514,7 +515,7 @@ export default function VendorProfilePage() {
   };
 
   const displayAvatar = resolveAvatar();
-  const displayRole = activeSource?.role || "vendor";
+  const displayRole = String(activeSource?.role || "vendor").toUpperCase();
 
   const currentSavedImg =
     currentUser?.image ||
@@ -704,25 +705,54 @@ export default function VendorProfilePage() {
 
   return (
     <main
-      style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
+      style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
       className="relative min-h-screen overflow-x-clip px-4 pt-24 pb-16 sm:px-6 sm:pt-28 md:px-8"
     >
+      {/* Slim Grid Overlay + Subtle Blush & Mint Glows */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+      >
+        <div
+          style={{
+            backgroundImage:
+              "linear-gradient(to right, rgba(36, 2, 14, 0.04) 1px, transparent 1px), linear-gradient(to bottom, rgba(36, 2, 14, 0.04) 1px, transparent 1px)",
+            backgroundSize: "28px 28px",
+          }}
+          className="absolute inset-0"
+        />
+        <div
+          style={{
+            background:
+              "radial-gradient(circle, rgba(255, 224, 232, 0.58) 0%, transparent 72%)",
+          }}
+          className="absolute -top-20 -left-20 h-[380px] w-[380px] rounded-full blur-3xl"
+        />
+        <div
+          style={{
+            background:
+              "radial-gradient(circle, rgba(186, 238, 233, 0.52) 0%, transparent 72%)",
+          }}
+          className="absolute right-[-80px] bottom-6 h-[400px] w-[400px] rounded-full blur-3xl"
+        />
+      </div>
+
       <div className="relative z-10 mx-auto grid max-w-7xl grid-cols-1 items-start gap-6 sm:gap-8 lg:grid-cols-12">
         {/* LEFT COLUMN: VENDOR PROFILE & OWNER CONTROLS */}
         <motion.div
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           className="space-y-6 lg:sticky lg:top-24 lg:col-span-4"
         >
-          <div className="relative overflow-hidden rounded-[28px] border-[3px] border-[#24020E] bg-[#FCF9F4] p-5 shadow-[6px_6px_0px_0px_#24020E] sm:rounded-[34px] sm:p-6 sm:shadow-[8px_8px_0px_0px_#24020E]">
-            <div className="flex flex-col items-center space-y-4 text-center">
+          <div className="rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/85 p-5 shadow-sm backdrop-blur-md sm:p-6">
+            <div className="flex flex-col items-center space-y-3.5 text-center">
               <div className="relative">
-                <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-3xl border-[3px] border-[#24020E] bg-[#FFEDF1] p-1 shadow-[4px_4px_0px_0px_#24020E] sm:h-28 sm:w-28">
+                <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#24020E]/20 bg-[#E3F6F5] shadow-sm sm:h-28 sm:w-28">
                   <img
                     src={displayAvatar}
                     alt={displayVendorName}
                     style={framingStyle}
-                    className="h-full w-full rounded-2xl object-cover transition-transform duration-150"
+                    className="h-full w-full object-cover transition-transform duration-150"
                     onError={(e) => {
                       e.currentTarget.src = buildDicebearAvatar(
                         displayVendorName
@@ -730,9 +760,9 @@ export default function VendorProfilePage() {
                     }}
                   />
                 </div>
-                <div className="absolute -right-2 -bottom-2 rounded-lg border-2 border-[#24020E] bg-[#C84B31] px-2.5 py-0.5 text-[9px] font-black tracking-wider text-[#FCF9F4] uppercase">
+                <span className="mt-2 inline-block rounded-full border border-teal-800/25 bg-[#E3F6F5] px-3 py-0.5 text-[10px] font-bold tracking-wider text-teal-900 uppercase">
                   {displayRole}
-                </div>
+                </span>
               </div>
 
               <div className="w-full space-y-1">
@@ -742,15 +772,15 @@ export default function VendorProfilePage() {
                 >
                   {displayVendorName}
                 </h1>
-                <p className="text-xs font-bold text-[#24020E]/70">
+                <p className="text-xs font-semibold text-[#24020E]/75">
                   Hosted by {displayOwnerName}
                 </p>
                 {isOwner && currentUser?.email && (
-                  <p className="pt-1 text-xs font-medium break-all text-[#24020E]/60 select-all">
+                  <p className="pt-0.5 text-xs break-all text-[#24020E]/60 select-all">
                     {currentUser.email}
                   </p>
                 )}
-                <p className="pt-1 text-[10px] font-black tracking-[0.15em] text-[#24020E]/45 uppercase">
+                <p className="pt-1 text-[10px] font-bold tracking-[0.18em] text-teal-800 uppercase">
                   {isOwner ? "Owner Studio View" : "Public Vendor Showcase"}
                 </p>
               </div>
@@ -766,21 +796,21 @@ export default function VendorProfilePage() {
                         setIsEditing(true);
                       }
                     }}
-                    className="w-full cursor-pointer rounded-2xl border-2 border-[#24020E] bg-[#FCF9F4] px-4 py-2.5 text-center text-xs font-black tracking-wider text-[#24020E] uppercase shadow-[3px_3px_0px_0px_#24020E] transition hover:bg-[#FFEDF1]"
+                    className="w-full cursor-pointer rounded-xl border border-[#24020E]/20 bg-[#E3F6F5]/85 px-4 py-2.5 text-center text-xs font-semibold tracking-wider text-teal-950 uppercase shadow-2xs transition hover:bg-[#E3F6F5]"
                   >
                     {isEditing ? "Exit edit mode" : "Configure Vendor Profile"}
                   </button>
                   <button
                     type="button"
                     onClick={() => router.push("/dashboard/vendor")}
-                    className="w-full cursor-pointer rounded-2xl border-2 border-[#24020E] bg-[#C84B31] px-4 py-2.5 text-center text-xs font-black tracking-wider text-[#FCF9F4] uppercase shadow-[3px_3px_0px_0px_#24020E] transition hover:opacity-95"
+                    className="w-full cursor-pointer rounded-xl bg-[#24020E] px-4 py-2.5 text-center text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-sm transition hover:bg-teal-800"
                   >
                     Dashboard
                   </button>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-[#24020E]/30 bg-[#FFEDF1] px-4 py-2.5 text-center text-xs font-black tracking-wider text-[#C84B31] uppercase transition hover:border-[#C84B31]"
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#C84B31]/25 bg-white/80 px-4 py-2.5 text-center text-xs font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-white"
                   >
                     <LogOut className="h-3.5 w-3.5" />
                     <span>Sign Out</span>
@@ -796,26 +826,30 @@ export default function VendorProfilePage() {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden rounded-[28px] border-[3px] border-[#24020E] bg-[#FCF9F4] p-5 shadow-[6px_6px_0px_0px_#24020E] sm:rounded-[34px] sm:p-6 sm:shadow-[8px_8px_0px_0px_#24020E]"
+                className="overflow-hidden rounded-2xl border border-[#24020E]/15 bg-white/75 p-5 shadow-sm backdrop-blur-md sm:p-6"
               >
-                <div className="mb-4 flex items-center justify-between gap-2">
-                  <h3 className="flex items-center gap-2 text-xs font-black tracking-widest text-[#24020E]/60 uppercase">
-                    <SlidersHorizontal className="h-3.5 w-3.5 text-[#C84B31]" />
+                <div className="mb-4 flex items-center justify-between gap-2 border-b border-[#24020E]/10 pb-3">
+                  <h3 className="flex items-center gap-2 text-xs font-bold tracking-wider text-teal-900 uppercase">
+                    <SlidersHorizontal className="h-3.5 w-3.5 text-teal-700" />
                     <span>Vendor Profile Parameters</span>
                   </h3>
                   <button
                     type="button"
                     onClick={exitEditingMode}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#24020E]/20 bg-white px-2.5 py-1 text-[10px] font-black tracking-wider text-[#24020E] uppercase transition hover:bg-[#FFEDF1]"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#24020E]/15 bg-[#FFF4F7] px-2.5 py-1 text-[10px] font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#E3F6F5]/75"
                   >
-                    <ArrowLeft className="h-3 w-3" />
+                    <ArrowLeft className="h-3 w-3 text-[#C84B31]" />
                     <span>Exit edit mode</span>
                   </button>
                 </div>
 
-                <form noValidate onSubmit={handleUpdateProfile} className="space-y-4">
+                <form
+                  noValidate
+                  onSubmit={handleUpdateProfile}
+                  className="space-y-4"
+                >
                   {/* Responsive Live Avatar Framing (Drag + Zoom + Move X/Y) */}
-                  <div className="space-y-3 rounded-2xl border-2 border-dashed border-[#24020E]/20 bg-[#FFEDF1]/45 p-3.5">
+                  <div className="space-y-3 rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/80 p-3.5 backdrop-blur-xs">
                     <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start">
                       <div
                         onPointerDown={handlePointerDown}
@@ -823,7 +857,7 @@ export default function VendorProfilePage() {
                         onPointerUp={handlePointerUp}
                         onPointerCancel={handlePointerUp}
                         title="Drag to move image"
-                        className="relative h-24 w-24 shrink-0 cursor-grab touch-none overflow-hidden rounded-2xl border-2 border-[#24020E] bg-white active:cursor-grabbing sm:h-20 sm:w-20"
+                        className="relative h-24 w-24 shrink-0 cursor-grab touch-none overflow-hidden rounded-2xl border border-[#24020E]/20 bg-[#E3F6F5] shadow-2xs active:cursor-grabbing sm:h-20 sm:w-20"
                       >
                         <img
                           src={displayAvatar}
@@ -844,8 +878,8 @@ export default function VendorProfilePage() {
 
                       <div className="w-full min-w-0 flex-1 space-y-2">
                         <div className="flex items-center justify-between gap-2">
-                          <label className="flex items-center gap-1 text-[10px] font-black tracking-wider text-[#24020E]/75 uppercase">
-                            <ImagePlus className="h-3 w-3 text-[#C84B31]" />
+                          <label className="flex items-center gap-1 text-[10px] font-bold tracking-wider text-[#24020E] uppercase">
+                            <ImagePlus className="h-3 w-3 text-teal-800" />
                             <span>Profile Image URL</span>
                           </label>
                           {formData.photoUrl && (
@@ -858,7 +892,7 @@ export default function VendorProfilePage() {
                                 }));
                                 setFraming(DEFAULT_FRAMING);
                               }}
-                              className="inline-flex cursor-pointer items-center gap-0.5 text-[10px] font-bold text-[#C84B31] hover:underline"
+                              className="inline-flex cursor-pointer items-center gap-0.5 text-[10px] font-semibold text-[#C84B31] hover:underline"
                             >
                               <X className="h-3 w-3" />
                               <span>Clear</span>
@@ -876,7 +910,7 @@ export default function VendorProfilePage() {
                             })
                           }
                           placeholder="https://example.com/vendor-photo.jpg"
-                          className="w-full rounded-xl border-2 border-[#24020E]/20 bg-white px-3 py-2 text-xs font-semibold focus:border-[#24020E] focus:outline-none"
+                          className="w-full rounded-xl border border-[#24020E]/15 bg-white/85 px-3 py-2 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
                         />
 
                         <div className="flex flex-wrap items-center gap-2">
@@ -891,7 +925,7 @@ export default function VendorProfilePage() {
                                 ),
                               }));
                             }}
-                            className="cursor-pointer rounded-lg border border-[#24020E]/25 bg-white px-2.5 py-1 text-[10px] font-black tracking-wider text-[#24020E] uppercase transition hover:bg-[#24020E] hover:text-[#FCF9F4]"
+                            className="cursor-pointer rounded-lg border border-[#24020E]/15 bg-[#E3F6F5]/80 px-2.5 py-1 text-[10px] font-semibold tracking-wider text-teal-950 uppercase transition hover:bg-[#E3F6F5]"
                           >
                             New Avatar
                           </button>
@@ -900,9 +934,9 @@ export default function VendorProfilePage() {
                             <button
                               type="button"
                               onClick={() => setFraming(DEFAULT_FRAMING)}
-                              className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#24020E]/25 bg-white px-2.5 py-1 text-[10px] font-black tracking-wider text-[#24020E] uppercase transition hover:bg-[#FFEDF1]"
+                              className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#24020E]/15 bg-white/85 px-2.5 py-1 text-[10px] font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#FFF4F7]"
                             >
-                              <RotateCcw className="h-2.5 w-2.5" />
+                              <RotateCcw className="h-2.5 w-2.5 text-[#C84B31]" />
                               <span>Reset Crop</span>
                             </button>
                           )}
@@ -911,11 +945,11 @@ export default function VendorProfilePage() {
                     </div>
 
                     {/* Zoom & Move X / Y Sliders */}
-                    <div className="space-y-2.5 border-t border-dashed border-[#24020E]/15 pt-3">
+                    <div className="space-y-2.5 border-t border-[#24020E]/10 pt-3">
                       <div className="space-y-1">
-                        <div className="flex items-center justify-between text-[10px] font-black tracking-wider text-[#24020E]/75 uppercase">
+                        <div className="flex items-center justify-between text-[10px] font-semibold tracking-wider text-[#24020E]/75 uppercase">
                           <span className="inline-flex items-center gap-1">
-                            <ZoomIn className="h-3 w-3 text-[#C84B31]" />
+                            <ZoomIn className="h-3 w-3 text-teal-800" />
                             <span>Zoom</span>
                           </span>
                           <span>{framing.zoom.toFixed(2)}x</span>
@@ -932,15 +966,15 @@ export default function VendorProfilePage() {
                               zoom: Number(e.target.value),
                             }))
                           }
-                          className="w-full cursor-pointer accent-[#C84B31]"
+                          className="w-full cursor-pointer accent-teal-700"
                         />
                       </div>
 
                       <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                         <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[10px] font-black tracking-wider text-[#24020E]/75 uppercase">
+                          <div className="flex items-center justify-between text-[10px] font-semibold tracking-wider text-[#24020E]/75 uppercase">
                             <span className="inline-flex items-center gap-1">
-                              <Move className="h-3 w-3 text-[#C84B31]" />
+                              <Move className="h-3 w-3 text-[#24020E]" />
                               <span>Move X</span>
                             </span>
                             <span>{framing.offsetX}%</span>
@@ -957,14 +991,14 @@ export default function VendorProfilePage() {
                                 offsetX: Number(e.target.value),
                               }))
                             }
-                            className="w-full cursor-pointer accent-[#C84B31]"
+                            className="w-full cursor-pointer accent-[#24020E]"
                           />
                         </div>
 
                         <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[10px] font-black tracking-wider text-[#24020E]/75 uppercase">
+                          <div className="flex items-center justify-between text-[10px] font-semibold tracking-wider text-[#24020E]/75 uppercase">
                             <span className="inline-flex items-center gap-1">
-                              <Move className="h-3 w-3 text-[#C84B31]" />
+                              <Move className="h-3 w-3 text-[#24020E]" />
                               <span>Move Y</span>
                             </span>
                             <span>{framing.offsetY}%</span>
@@ -981,7 +1015,7 @@ export default function VendorProfilePage() {
                                 offsetY: Number(e.target.value),
                               }))
                             }
-                            className="w-full cursor-pointer accent-[#C84B31]"
+                            className="w-full cursor-pointer accent-[#24020E]"
                           />
                         </div>
                       </div>
@@ -989,19 +1023,19 @@ export default function VendorProfilePage() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="ml-1 text-[10px] font-bold text-[#24020E]/70 uppercase">
+                    <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/65 uppercase">
                       Email Address
                     </label>
                     <input
                       type="text"
                       value={currentUser?.email || ""}
                       disabled
-                      className="w-full cursor-not-allowed rounded-xl border border-[#24020E]/15 bg-[#FFEDF1]/60 p-3 text-xs font-semibold text-[#24020E]/55 select-all"
+                      className="w-full cursor-not-allowed rounded-xl border border-[#24020E]/10 bg-[#E3F6F5]/55 p-3 text-xs text-[#24020E]/60 select-all"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="ml-1 text-[10px] font-bold text-[#24020E]/70 uppercase">
+                    <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/65 uppercase">
                       Vendor Name
                     </label>
                     <input
@@ -1011,12 +1045,12 @@ export default function VendorProfilePage() {
                         setFormData({ ...formData, name: e.target.value })
                       }
                       placeholder="Your name"
-                      className="w-full rounded-xl border-2 border-[#24020E]/20 bg-white p-3 text-xs font-semibold focus:border-[#24020E] focus:outline-none"
+                      className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 p-3 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="ml-1 text-[10px] font-bold text-[#24020E]/70 uppercase">
+                    <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/65 uppercase">
                       Business / Atelier Name
                     </label>
                     <input
@@ -1029,17 +1063,17 @@ export default function VendorProfilePage() {
                         })
                       }
                       placeholder="e.g., Velvet Petal Florals"
-                      className="w-full rounded-xl border-2 border-[#24020E]/20 bg-white p-3 text-xs font-semibold focus:border-[#24020E] focus:outline-none"
+                      className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 p-3 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
                     />
                   </div>
 
-                  <div className="mt-4 grid grid-cols-1 gap-3 border-t border-dashed border-[#24020E]/15 pt-4">
+                  <div className="mt-4 grid grid-cols-1 gap-3 border-t border-[#24020E]/10 pt-4">
                     <div>
-                      <label className="mb-1.5 ml-1 block text-[10px] font-black tracking-widest text-[#24020E]/65 uppercase">
+                      <label className="mb-1.5 ml-1 block text-[10px] font-bold tracking-wider text-[#24020E]/65 uppercase">
                         New Password (Optional)
                       </label>
-                      <div className="relative overflow-hidden rounded-xl border-2 border-[#24020E]/20 bg-white focus-within:border-[#24020E]">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#24020E]/50">
+                      <div className="relative overflow-hidden rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 focus-within:border-teal-700 focus-within:bg-white">
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#24020E]/45">
                           <Lock className="h-3.5 w-3.5" />
                         </div>
                         <input
@@ -1047,7 +1081,7 @@ export default function VendorProfilePage() {
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full bg-transparent py-2.5 pr-10 pl-10 text-xs font-semibold focus:outline-none"
+                          className="w-full bg-transparent py-2.5 pr-10 pl-10 text-xs text-[#24020E] focus:outline-none"
                         />
                         <button
                           type="button"
@@ -1064,11 +1098,11 @@ export default function VendorProfilePage() {
                     </div>
 
                     <div>
-                      <label className="mb-1.5 ml-1 block text-[10px] font-black tracking-widest text-[#24020E]/65 uppercase">
+                      <label className="mb-1.5 ml-1 block text-[10px] font-bold tracking-wider text-[#24020E]/65 uppercase">
                         Confirm New Password
                       </label>
-                      <div className="relative overflow-hidden rounded-xl border-2 border-[#24020E]/20 bg-white focus-within:border-[#24020E]">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#24020E]/50">
+                      <div className="relative overflow-hidden rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 focus-within:border-teal-700 focus-within:bg-white">
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#24020E]/45">
                           <Lock className="h-3.5 w-3.5" />
                         </div>
                         <input
@@ -1076,7 +1110,7 @@ export default function VendorProfilePage() {
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           placeholder="••••••••"
-                          className="w-full bg-transparent py-2.5 pr-10 pl-10 text-xs font-semibold focus:outline-none"
+                          className="w-full bg-transparent py-2.5 pr-10 pl-10 text-xs text-[#24020E] focus:outline-none"
                         />
                         <button
                           type="button"
@@ -1098,16 +1132,16 @@ export default function VendorProfilePage() {
                       <button
                         type="submit"
                         disabled={updating}
-                        className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-[#24020E] bg-[#24020E] py-3 text-xs font-black tracking-widest text-[#FCF9F4] uppercase shadow-[4px_4px_0px_0px_#C84B31] transition hover:opacity-95 disabled:opacity-60"
+                        className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#24020E] py-3 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-sm transition hover:bg-teal-800 disabled:opacity-60"
                       >
-                        <Store className="h-3.5 w-3.5 text-[#E8D1A7]" />
+                        <Store className="h-3.5 w-3.5 text-[#99F6E4]" />
                         <span>{updating ? "Saving..." : "Save Changes"}</span>
                       </button>
                       <button
                         type="button"
                         disabled={updating}
                         onClick={exitEditingMode}
-                        className="flex cursor-pointer items-center justify-center gap-1.5 rounded-2xl border-2 border-[#24020E] bg-white px-4 py-3 text-xs font-black tracking-widest text-[#24020E] uppercase transition hover:bg-[#FFEDF1] disabled:opacity-60"
+                        className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#24020E]/15 bg-white/85 px-4 py-3 text-xs font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#FFF4F7] disabled:opacity-60"
                       >
                         <span>Exit edit mode</span>
                       </button>
@@ -1117,9 +1151,9 @@ export default function VendorProfilePage() {
                       <button
                         type="button"
                         onClick={exitEditingMode}
-                        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl border-2 border-[#24020E] bg-white py-2.5 text-xs font-black tracking-widest text-[#24020E] uppercase transition hover:bg-[#FFEDF1]"
+                        className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#24020E]/15 bg-white/85 py-2.5 text-xs font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#FFF4F7]"
                       >
-                        <ArrowLeft className="h-3.5 w-3.5" />
+                        <ArrowLeft className="h-3.5 w-3.5 text-[#C84B31]" />
                         <span>Exit edit mode</span>
                       </button>
                     </div>
@@ -1131,16 +1165,16 @@ export default function VendorProfilePage() {
         </motion.div>
 
         {/* RIGHT COLUMN: VENDOR SERVICES CATALOG (BOUNDED SCROLLABLE CONTAINER) */}
-        <div className="flex max-h-[75vh] flex-col overflow-hidden rounded-[28px] border-[3px] border-[#24020E] bg-[#FCF9F4]/95 p-4 shadow-[6px_6px_0px_0px_#24020E] sm:rounded-[36px] sm:p-6 sm:shadow-[10px_10px_0px_0px_#24020E] lg:col-span-8 lg:max-h-[calc(100vh-8.5rem)]">
+        <div className="flex max-h-[75vh] flex-col overflow-hidden rounded-2xl border border-[#24020E]/15 bg-white/75 p-4 shadow-sm backdrop-blur-md sm:p-6 lg:col-span-8 lg:max-h-[calc(100vh-8.5rem)]">
           {/* Top Header + Search */}
-          <div className="flex shrink-0 flex-col justify-between gap-3 border-b border-dashed border-[#24020E]/20 pb-4 sm:gap-4 md:flex-row md:items-center">
+          <div className="flex shrink-0 flex-col justify-between gap-3 border-b border-[#24020E]/10 pb-4 sm:gap-4 md:flex-row md:items-center">
             <div className="flex flex-wrap items-center gap-2">
-              <Grid className="h-4 w-4 text-[#C84B31]" />
-              <h2 className="text-xs font-black tracking-[0.2em] text-[#24020E] uppercase">
+              <Grid className="h-4 w-4 text-teal-700" />
+              <h2 className="text-xs font-bold tracking-[0.18em] text-[#24020E] uppercase">
                 Offered Wedding Services
               </h2>
-              <span className="inline-flex items-center gap-1 rounded-full bg-[#FFEDF1] px-2.5 py-0.5 text-[10px] font-bold text-[#24020E]/75">
-                <Sparkles className="h-3 w-3 text-[#C84B31]" />
+              <span className="inline-flex items-center gap-1 rounded-full border border-teal-800/20 bg-[#E3F6F5]/85 px-2.5 py-0.5 text-[10px] font-semibold text-teal-950">
+                <Sparkles className="h-3 w-3 text-teal-700" />
                 <span>Placeholder Card</span>
               </span>
             </div>
@@ -1152,25 +1186,25 @@ export default function VendorProfilePage() {
                 placeholder="Search by name or detail..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full rounded-xl border-2 border-[#24020E]/20 bg-white py-2 pr-3 pl-9 text-xs font-medium focus:border-[#24020E] focus:outline-none"
+                className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 py-2 pr-3 pl-9 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
               />
             </div>
           </div>
 
           {/* Filter & Sort Controls */}
-          <div className="flex shrink-0 flex-col gap-3 border-b border-dashed border-[#24020E]/15 py-3.5 sm:gap-3.5 sm:py-4">
+          <div className="flex shrink-0 flex-col gap-3 border-b border-[#24020E]/10 py-3.5 sm:gap-3.5 sm:py-4">
             {/* Category Pills */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <Filter className="mr-1 h-3.5 w-3.5 shrink-0 text-[#24020E]/45" />
+              <Filter className="mr-1 h-3.5 w-3.5 shrink-0 text-teal-700" />
               {categories.map((cat) => (
                 <button
                   key={cat}
                   type="button"
                   onClick={() => setSelectedCategory(cat)}
-                  className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-[10px] font-black tracking-wider uppercase transition sm:px-3.5 ${
+                  className={`shrink-0 cursor-pointer rounded-full px-3 py-1.5 text-[10px] font-semibold tracking-wider uppercase transition sm:px-3.5 ${
                     selectedCategory === cat
-                      ? "border-2 border-[#24020E] bg-[#24020E] text-[#FCF9F4]"
-                      : "border border-[#24020E]/25 bg-white text-[#24020E]/75 hover:border-[#24020E]"
+                      ? "bg-[#24020E] text-[#FCF9F4] shadow-2xs"
+                      : "border border-[#24020E]/15 bg-[#FFF4F7]/80 text-[#24020E]/75 hover:border-teal-700/40 hover:bg-[#E3F6F5]/65"
                   }`}
                 >
                   {cat}
@@ -1182,19 +1216,19 @@ export default function VendorProfilePage() {
             <div className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
               <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <div className="relative w-full sm:w-40">
-                  <MapPin className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-[#C84B31]" />
+                  <MapPin className="absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-teal-700" />
                   <input
                     type="text"
                     placeholder="Filter by location..."
                     value={locationFilter}
                     onChange={(e) => setLocationFilter(e.target.value)}
-                    className="w-full rounded-lg border border-[#24020E]/25 bg-white py-1.5 pr-2.5 pl-8 text-[11px] font-semibold text-[#24020E] focus:border-[#24020E] focus:outline-none sm:py-1"
+                    className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 py-1.5 pr-2.5 pl-8 text-[11px] font-medium text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white sm:py-1"
                   />
                 </div>
 
                 <div className="flex items-center gap-1.5">
                   <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-[#24020E]/55" />
-                  <span className="text-[10px] font-black tracking-wider text-[#24020E]/65 uppercase">
+                  <span className="text-[10px] font-bold tracking-wider text-[#24020E]/65 uppercase">
                     Price:
                   </span>
                   <input
@@ -1207,7 +1241,7 @@ export default function VendorProfilePage() {
                         e.target.value === "" ? "" : Number(e.target.value)
                       )
                     }
-                    className="w-20 rounded-lg border border-[#24020E]/25 bg-white px-2 py-1 text-[11px] font-bold text-[#24020E] focus:border-[#24020E] focus:outline-none"
+                    className="w-20 rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 px-2 py-1 text-[11px] font-semibold text-[#24020E] outline-none focus:border-teal-700 focus:bg-white"
                   />
                   <span className="text-[10px] font-bold text-[#24020E]/45">
                     to
@@ -1222,20 +1256,20 @@ export default function VendorProfilePage() {
                         e.target.value === "" ? "" : Number(e.target.value)
                       )
                     }
-                    className="w-20 rounded-lg border border-[#24020E]/25 bg-white px-2 py-1 text-[11px] font-bold text-[#24020E] focus:border-[#24020E] focus:outline-none"
+                    className="w-20 rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 px-2 py-1 text-[11px] font-semibold text-[#24020E] outline-none focus:border-teal-700 focus:bg-white"
                   />
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 <ArrowUpDown className="h-3.5 w-3.5 shrink-0 text-[#24020E]/55" />
-                <span className="text-[10px] font-black tracking-wider text-[#24020E]/65 uppercase">
+                <span className="text-[10px] font-bold tracking-wider text-[#24020E]/65 uppercase">
                   Sort:
                 </span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
-                  className="cursor-pointer rounded-lg border border-[#24020E]/25 bg-white px-2.5 py-1 text-[11px] font-black tracking-wider text-[#24020E] uppercase focus:border-[#24020E] focus:outline-none"
+                  className="cursor-pointer rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 px-2.5 py-1 text-[11px] font-semibold tracking-wider text-[#24020E] uppercase outline-none focus:border-teal-700 focus:bg-white"
                 >
                   <option value="newest">Newest</option>
                   <option value="price-low">Price: Low to High</option>
@@ -1246,7 +1280,7 @@ export default function VendorProfilePage() {
                   <button
                     type="button"
                     onClick={resetFilters}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-[#C84B31]/35 bg-[#FFEDF1] px-2.5 py-1 text-[10px] font-black tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-[#FCF9F4]"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-[#C84B31]/30 bg-[#FFF4F7] px-2.5 py-1 text-[10px] font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-[#FCF9F4]"
                   >
                     <RotateCcw className="h-3 w-3" />
                     <span>Reset</span>
@@ -1263,16 +1297,16 @@ export default function VendorProfilePage() {
                 Loading services showcase...
               </div>
             ) : filteredAndSortedServices.length === 0 ? (
-              <div className="flex flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-[#24020E]/20 bg-[#FFEDF1]/40 p-10 text-center sm:rounded-[28px] sm:p-14">
-                <Inbox className="mb-2 h-6 w-6 text-[#24020E]/35" />
-                <p className="text-xs font-bold tracking-widest text-[#24020E]/55 uppercase italic">
+              <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[#24020E]/20 bg-[#FFF4F7]/70 p-10 text-center sm:p-14">
+                <Inbox className="mb-2 h-6 w-6 text-teal-700/60" />
+                <p className="text-xs font-semibold tracking-widest text-[#24020E]/60 uppercase italic">
                   No services match your current filters.
                 </p>
                 {hasActiveFilters && (
                   <button
                     type="button"
                     onClick={resetFilters}
-                    className="mt-4 cursor-pointer rounded-full border-2 border-[#24020E] bg-[#FCF9F4] px-4 py-1.5 text-[10px] font-black tracking-wider text-[#24020E] uppercase shadow-[2px_2px_0px_0px_#24020E]"
+                    className="mt-4 cursor-pointer rounded-xl border border-[#24020E]/20 bg-[#E3F6F5] px-4 py-1.5 text-[10px] font-semibold tracking-wider text-teal-950 uppercase shadow-2xs"
                   >
                     Clear All Filters
                   </button>
@@ -1289,15 +1323,15 @@ export default function VendorProfilePage() {
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, scale: 0.96 }}
                       transition={{ duration: 0.35 }}
-                      className="group relative flex flex-col overflow-hidden rounded-[24px] border-2 border-[#24020E] bg-white shadow-[5px_5px_0px_0px_#24020E] transition hover:-translate-y-0.5 sm:rounded-[28px]"
+                      className="group relative flex flex-col overflow-hidden rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/85 shadow-sm backdrop-blur-md transition hover:-translate-y-0.5 hover:shadow-md"
                     >
-                      <div className="relative aspect-[4/3] w-full overflow-hidden border-b-2 border-[#24020E]/15 bg-[#FFEDF1]">
+                      <div className="relative aspect-[4/3] w-full overflow-hidden border-b border-[#24020E]/10 bg-[#E3F6F5]/60">
                         <img
                           src={srv.img || FALLBACK_SERVICE_IMAGE}
                           alt={srv.serviceName}
                           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />
-                        <span className="absolute top-3 left-3 rounded-full border border-[#24020E] bg-[#FCF9F4]/95 px-3 py-0.5 text-[9px] font-black tracking-wider text-[#24020E] uppercase">
+                        <span className="absolute top-3 left-3 rounded-full border border-teal-800/20 bg-[#FCF9F4]/90 px-3 py-0.5 text-[10px] font-semibold tracking-wider text-teal-950 uppercase backdrop-blur-xs">
                           {srv.category}
                         </span>
                       </div>
@@ -1311,10 +1345,10 @@ export default function VendorProfilePage() {
                             {srv.serviceName}
                           </h4>
                           <p className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold text-[#24020E]/65">
-                            <MapPin className="h-3 w-3 text-[#C84B31]" />
+                            <MapPin className="h-3 w-3 text-teal-700" />
                             <span>{srv.location}</span>
                           </p>
-                          <p className="mt-1.5 text-sm font-black text-[#C84B31]">
+                          <p className="mt-1.5 text-sm font-bold text-[#C84B31]">
                             ৳{srv.price?.toLocaleString("en-BD")} BDT
                           </p>
                           {srv.description && (
@@ -1327,9 +1361,9 @@ export default function VendorProfilePage() {
                         <div className="mt-auto grid grid-cols-1 gap-2 border-t border-[#24020E]/10 pt-3">
                           <Link
                             href={`/services/${srv._id}`}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-[#24020E] bg-[#FCF9F4] py-2.5 text-[10px] font-black tracking-widest text-[#24020E] uppercase transition hover:bg-[#FFEDF1]"
+                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#24020E] py-2.5 text-[10px] font-semibold tracking-widest text-[#FCF9F4] uppercase transition hover:bg-teal-800"
                           >
-                            <Eye className="h-3.5 w-3.5" />
+                            <Eye className="h-3.5 w-3.5 text-[#99F6E4]" />
                             <span>Inspect Service</span>
                           </Link>
 
@@ -1344,16 +1378,16 @@ export default function VendorProfilePage() {
                                     { icon: "✏️" }
                                   );
                                 }}
-                                className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#24020E]/25 bg-[#FFEDF1]/70 py-2 text-[10px] font-black tracking-wider text-[#24020E] uppercase transition hover:bg-[#24020E] hover:text-[#FCF9F4]"
+                                className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#24020E]/15 bg-[#E3F6F5]/80 py-2 text-[10px] font-semibold tracking-wider text-teal-950 uppercase transition hover:bg-[#E3F6F5]"
                               >
-                                <Edit3 className="h-3 w-3" />
+                                <Edit3 className="h-3 w-3 text-teal-700" />
                                 <span>Modify</span>
                               </button>
 
                               <button
                                 type="button"
                                 onClick={() => handleDeleteService(srv._id)}
-                                className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#C84B31]/30 bg-red-50 py-2 text-[10px] font-black tracking-wider text-[#C84B31] uppercase transition hover:bg-red-100"
+                                className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#C84B31]/25 bg-white/80 py-2 text-[10px] font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-white"
                               >
                                 <Trash2 className="h-3 w-3" />
                                 <span>Remove</span>
@@ -1371,5 +1405,13 @@ export default function VendorProfilePage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function VendorProfilePage() {
+  return (
+    <Suspense fallback={<VendorProfileLoadingFallback />}>
+      <VendorProfileContent />
+    </Suspense>
   );
 }
