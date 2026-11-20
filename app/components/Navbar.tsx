@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -14,6 +14,9 @@ import {
   X,
 } from "lucide-react";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const PROFILE_PAGE_HREF = "/profile-settings";
+
 export type UserRole = "customer" | "vendor" | "admin";
 
 export interface NavbarUser {
@@ -26,9 +29,7 @@ export interface NavbarUser {
 }
 
 interface NavbarProps {
-  /** Pass the current Better Auth / session user; updates navbar immediately when changed */
   user?: NavbarUser | null;
-  /** Optional sign-out handler; if omitted, calls /api/auth/sign-out and refreshes */
   onLogout?: () => Promise<void> | void;
 }
 
@@ -44,17 +45,86 @@ function getDashboardHref(role?: UserRole): string {
   }
 }
 
-export default function Navbar({ user = null, onLogout }: NavbarProps) {
+function readStoredUser(): NavbarUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem("wedplan_user");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as NavbarUser;
+    if (!parsed?.email && !parsed?.name) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
   const pathname = usePathname();
   const router = useRouter();
 
+  const [currentUser, setCurrentUser] = useState<NavbarUser | null>(
+    propUser ?? null
+  );
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // Close profile dropdown on outside click or route change
+  const syncAuthUser = useCallback(async () => {
+    if (propUser !== undefined) {
+      setCurrentUser(propUser);
+      return;
+    }
+
+    const cached = readStoredUser();
+    setCurrentUser(cached);
+
+    if (typeof window === "undefined") return;
+    const token = window.localStorage.getItem("wedplan_token");
+    if (!token) {
+      setCurrentUser(null);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          window.localStorage.removeItem("wedplan_token");
+          window.localStorage.removeItem("wedplan_user");
+          setCurrentUser(null);
+        }
+        return;
+      }
+      const data = await res.json();
+      if (data?.success && data?.user) {
+        window.localStorage.setItem("wedplan_user", JSON.stringify(data.user));
+        setCurrentUser(data.user);
+      }
+    } catch {
+      // Keep cached user on transient network issues
+    }
+  }, [propUser]);
+
+  useEffect(() => {
+    const handleSync = () => {
+      setCurrentUser(readStoredUser());
+      void syncAuthUser();
+    };
+
+    handleSync();
+    window.addEventListener("wedplan-auth-changed", handleSync);
+    window.addEventListener("storage", handleSync);
+    return () => {
+      window.removeEventListener("wedplan-auth-changed", handleSync);
+      window.removeEventListener("storage", handleSync);
+    };
+  }, [pathname, syncAuthUser]);
+
   useEffect(() => {
     setDropdownOpen(false);
     setMobileOpen(false);
@@ -88,46 +158,83 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
   const handleLogoutClick = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("wedplan_token");
+      window.localStorage.removeItem("wedplan_user");
+      window.dispatchEvent(new Event("wedplan-auth-changed"));
+    }
+    setCurrentUser(null);
+    setDropdownOpen(false);
+    setMobileOpen(false);
+    router.replace("/sign-in");
+    router.refresh();
+
     try {
       if (onLogout) {
         await onLogout();
       } else {
-        await fetch("/api/auth/sign-out", {
+        await fetch(`${API_BASE}/api/auth/sign-out`, {
           method: "POST",
           credentials: "include",
-        });
+        }).catch(() => null);
       }
-      setDropdownOpen(false);
-      setMobileOpen(false);
-      router.refresh();
-      router.push("/sign-in");
     } finally {
       setLoggingOut(false);
+      if (typeof window !== "undefined" && window.location.pathname !== "/sign-in") {
+        window.location.replace("/sign-in");
+      }
     }
   };
 
-  const navLinks = [
-    { label: "Home", href: "/" },
-    { label: "Browse Services", href: "/services" },
-  ];
+  const navLinks = currentUser
+    ? [
+        { label: "Home", href: "/" },
+        { label: "Browse Services", href: "/services" },
+        { label: "Dashboard", href: getDashboardHref(currentUser.role) },
+        { label: "Profile Settings", href: PROFILE_PAGE_HREF },
+      ]
+    : [
+        { label: "Home", href: "/" },
+        { label: "Browse Services", href: "/services" },
+      ];
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname?.startsWith(href);
 
-  const initials = (user?.name || "W")
+  const initials = (currentUser?.name || "W")
     .split(" ")
     .map((part) => part[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
 
+  const renderAvatar = (sizeClass = "h-7 w-7 text-xs") => {
+    if (currentUser?.image) {
+      return (
+        <img
+          src={currentUser.image}
+          alt={currentUser.name}
+          className={`${sizeClass} rounded-full object-cover ring-1 ring-[#24020E]/20`}
+        />
+      );
+    }
+    return (
+      <span
+        style={{ backgroundColor: "#24020E", color: "#FFEDF1" }}
+        className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-full font-bold`}
+      >
+        {initials}
+      </span>
+    );
+  };
+
   return (
     <header className="fixed top-3 right-0 left-0 z-40 mx-auto w-full max-w-6xl px-3 sm:px-6">
-      {/* Unique Vintage Keepsake-Ribbon Glassmorphic Shell */}
       <div
         style={{
           background:
-            "linear-gradient(120deg, rgba(244, 226, 230, 0.84) 0%, rgba(232, 209, 167, 0.56) 52%, rgba(205, 232, 223, 0.62) 100%)",
+            "linear-gradient(120deg, rgba(252, 249, 244, 0.9) 0%, rgba(255, 237, 241, 0.82) 52%, rgba(205, 232, 223, 0.68) 100%)",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
           border: "1.5px solid rgba(36, 2, 14, 0.16)",
@@ -136,21 +243,20 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
         }}
         className="relative rounded-[28px] px-4 py-2.5 sm:px-6"
       >
-        {/* Subtle inner lace-stitch frame accent */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-[4px] rounded-[24px] border border-dashed border-[#24020E]/15"
         />
 
-        <div className="relative z-10 flex items-center justify-between gap-4">
-          {/* Logo / Name: WedPlan */}
+        <div className="relative z-10 flex items-center justify-between gap-3">
+          {/* Left: Logo + Brand Text */}
           <Link
             href="/"
             style={{ color: "#24020E" }}
-            className="group inline-flex items-center gap-2 focus:outline-none"
+            className="group inline-flex shrink-0 items-center gap-2 focus:outline-none"
           >
             <span
-              style={{ backgroundColor: "#24020E", color: "#F4E2E6" }}
+              style={{ backgroundColor: "#24020E", color: "#FFEDF1" }}
               className="flex h-9 w-9 items-center justify-center rounded-full shadow-xs transition-transform duration-300 group-hover:scale-105"
             >
               <Sparkles className="h-4 w-4" />
@@ -166,10 +272,10 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
             </span>
           </Link>
 
-          {/* Desktop Center/Right Navigation */}
+          {/* Center: Round Button-Like Navigation Containers */}
           <nav
             aria-label="Primary Navigation"
-            className="hidden items-center gap-2 md:flex"
+            className="hidden flex-1 items-center justify-center gap-2 md:flex"
           >
             {navLinks.map((item) => {
               const active = isActive(item.href);
@@ -179,79 +285,101 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
                   href={item.href}
                   style={
                     active
-                      ? { backgroundColor: "#24020E", color: "#F4E2E6" }
-                      : { color: "#24020E" }
+                      ? {
+                          backgroundColor: "#24020E",
+                          color: "#FFEDF1",
+                          borderColor: "#24020E",
+                        }
+                      : {
+                          backgroundColor: "rgba(255, 255, 255, 0.68)",
+                          color: "#24020E",
+                          borderColor: "rgba(36, 2, 14, 0.2)",
+                        }
                   }
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                    active
-                      ? "shadow-xs"
-                      : "hover:bg-[#24020E]/10"
-                  }`}
+                  className="inline-flex items-center justify-center rounded-full border px-4 py-1.5 text-xs font-semibold shadow-2xs transition hover:-translate-y-0.5 hover:bg-white/95"
                 >
                   {item.label}
                 </Link>
               );
             })}
+          </nav>
 
-            {/* Auth State Switcher: Public vs Authenticated */}
-            {!user ? (
-              <div className="ml-2 flex items-center gap-2">
+          {/* Right: Auth or Profile Pill + Small Logout Icon */}
+          <div className="hidden shrink-0 items-center gap-2 md:flex">
+            {!currentUser ? (
+              <>
                 <Link
                   href="/sign-in"
                   style={{
                     color: "#24020E",
                     borderColor: "rgba(36, 2, 14, 0.25)",
-                    backgroundColor: "rgba(255, 255, 255, 0.55)",
+                    backgroundColor: "rgba(255, 255, 255, 0.68)",
                   }}
-                  className="rounded-full border px-4 py-2 text-sm font-semibold transition hover:bg-white/80"
+                  className="inline-flex items-center justify-center rounded-full border px-4 py-1.5 text-xs font-semibold shadow-2xs transition hover:bg-white/95"
                 >
                   Sign In
                 </Link>
                 <Link
                   href="/sign-up"
-                  style={{ backgroundColor: "#24020E", color: "#F4E2E6" }}
-                  className="rounded-full px-4 py-2 text-sm font-semibold shadow-xs transition hover:opacity-90"
+                  style={{ backgroundColor: "#24020E", color: "#FFEDF1" }}
+                  className="inline-flex items-center justify-center rounded-full px-4 py-1.5 text-xs font-semibold shadow-xs transition hover:opacity-90"
                 >
                   Sign Up
                 </Link>
-              </div>
+              </>
             ) : (
-              <div ref={dropdownRef} className="relative ml-2">
+              <div ref={dropdownRef} className="relative flex items-center gap-1.5">
+                <div
+                  style={{
+                    backgroundColor: "rgba(255, 255, 255, 0.74)",
+                    color: "#24020E",
+                    borderColor: "rgba(36, 2, 14, 0.22)",
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full border py-1 pr-1.5 pl-1.5 text-xs font-semibold shadow-2xs"
+                >
+                  <Link
+                    href={PROFILE_PAGE_HREF}
+                    title="Go to Profile"
+                    className="inline-flex items-center gap-2 rounded-full pr-1 transition hover:opacity-85"
+                  >
+                    {renderAvatar("h-7 w-7 text-[11px]")}
+                    <span className="max-w-[110px] truncate">
+                      {currentUser.name}
+                    </span>
+                  </Link>
+
+                  <button
+                    type="button"
+                    onClick={() => setDropdownOpen((prev) => !prev)}
+                    aria-label="Open Profile Menu"
+                    aria-expanded={dropdownOpen}
+                    aria-haspopup="menu"
+                    className="inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-full transition hover:bg-[#24020E]/10"
+                  >
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                        dropdownOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => setDropdownOpen((prev) => !prev)}
-                  aria-expanded={dropdownOpen}
-                  aria-haspopup="menu"
+                  onClick={handleLogoutClick}
+                  disabled={loggingOut}
+                  title="Log out"
+                  aria-label="Log out"
                   style={{
-                    backgroundColor: "rgba(255, 255, 255, 0.65)",
+                    backgroundColor: "rgba(255, 255, 255, 0.74)",
                     color: "#24020E",
-                    borderColor: "rgba(36, 2, 14, 0.2)",
+                    borderColor: "rgba(36, 2, 14, 0.22)",
                   }}
-                  className="inline-flex items-center gap-2.5 rounded-full border py-1.5 pr-3 pl-1.5 text-sm font-semibold shadow-2xs transition hover:bg-white/90"
+                  className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border shadow-2xs transition hover:bg-[#24020E] hover:text-[#FFEDF1] disabled:opacity-50"
                 >
-                  {user.image ? (
-                    <img
-                      src={user.image}
-                      alt={user.name}
-                      className="h-7 w-7 rounded-full object-cover ring-1 ring-[#24020E]/20"
-                    />
-                  ) : (
-                    <span
-                      style={{ backgroundColor: "#24020E", color: "#F4E2E6" }}
-                      className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold"
-                    >
-                      {initials}
-                    </span>
-                  )}
-                  <span className="max-w-[130px] truncate">{user.name}</span>
-                  <ChevronDown
-                    className={`h-4 w-4 transition-transform duration-200 ${
-                      dropdownOpen ? "rotate-180" : ""
-                    }`}
-                  />
+                  <LogOut className="h-3.5 w-3.5" />
                 </button>
 
-                {/* Profile Dropdown Menu */}
                 <AnimatePresence>
                   {dropdownOpen && (
                     <motion.div
@@ -261,45 +389,31 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
                       exit={{ opacity: 0, y: 6, scale: 0.97 }}
                       transition={{ duration: 0.16, ease: "easeOut" }}
                       style={{
-                        backgroundColor: "rgba(244, 226, 230, 0.96)",
+                        backgroundColor: "rgba(252, 249, 244, 0.97)",
                         backdropFilter: "blur(18px)",
                         WebkitBackdropFilter: "blur(18px)",
                         borderColor: "rgba(36, 2, 14, 0.18)",
                         color: "#24020E",
                       }}
-                      className="absolute right-0 mt-2 w-60 origin-top-right rounded-2xl border p-2 shadow-xl"
+                      className="absolute top-full right-0 mt-2 w-60 origin-top-right rounded-2xl border p-2 shadow-xl"
                     >
-                      {/* User Header inside Dropdown */}
-                      <div className="mb-1.5 flex items-center gap-3 rounded-xl bg-[#24020E]/5 px-3 py-2.5">
-                        {user.image ? (
-                          <img
-                            src={user.image}
-                            alt={user.name}
-                            className="h-9 w-9 rounded-full object-cover ring-1 ring-[#24020E]/20"
-                          />
-                        ) : (
-                          <span
-                            style={{
-                              backgroundColor: "#24020E",
-                              color: "#F4E2E6",
-                            }}
-                            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-                          >
-                            {initials}
-                          </span>
-                        )}
+                      <Link
+                        href={PROFILE_PAGE_HREF}
+                        className="mb-1.5 flex items-center gap-3 rounded-xl bg-[#24020E]/5 px-3 py-2.5 transition hover:bg-[#24020E]/10"
+                      >
+                        {renderAvatar("h-9 w-9 text-xs")}
                         <div className="min-w-0">
                           <p className="truncate text-sm font-bold text-[#24020E]">
-                            {user.name}
+                            {currentUser.name}
                           </p>
                           <p className="truncate text-[11px] font-medium text-[#24020E]/70 capitalize">
-                            {user.role}
+                            {currentUser.role}
                           </p>
                         </div>
-                      </div>
+                      </Link>
 
                       <Link
-                        href={getDashboardHref(user.role)}
+                        href={getDashboardHref(currentUser.role)}
                         role="menuitem"
                         className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] transition hover:bg-[#24020E]/10"
                       >
@@ -308,7 +422,7 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
                       </Link>
 
                       <Link
-                        href="/profile-settings"
+                        href={PROFILE_PAGE_HREF}
                         role="menuitem"
                         className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] transition hover:bg-[#24020E]/10"
                       >
@@ -324,7 +438,7 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
                         onClick={handleLogoutClick}
                         disabled={loggingOut}
                         style={{ color: "#24020E" }}
-                        className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-semibold transition hover:bg-[#24020E] hover:text-[#F4E2E6] disabled:opacity-50"
+                        className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-semibold transition hover:bg-[#24020E] hover:text-[#FFEDF1] disabled:opacity-50"
                       >
                         <LogOut className="h-4 w-4" />
                         <span>{loggingOut ? "Logging out..." : "Logout"}</span>
@@ -334,16 +448,15 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
                 </AnimatePresence>
               </div>
             )}
-          </nav>
+          </div>
 
-          {/* Mobile Hamburger Toggle */}
           <button
             type="button"
             onClick={() => setMobileOpen((prev) => !prev)}
             aria-label="Toggle Menu"
             aria-expanded={mobileOpen}
             style={{ color: "#24020E", borderColor: "rgba(36, 2, 14, 0.2)" }}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border bg-white/50 transition hover:bg-white/80 md:hidden"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border bg-white/60 transition hover:bg-white/90 md:hidden"
           >
             {mobileOpen ? (
               <X className="h-5 w-5" />
@@ -353,7 +466,6 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
           </button>
         </div>
 
-        {/* Mobile Drawer */}
         <AnimatePresence>
           {mobileOpen && (
             <motion.div
@@ -372,92 +484,86 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
                       href={item.href}
                       style={
                         active
-                          ? { backgroundColor: "#24020E", color: "#F4E2E6" }
-                          : { color: "#24020E" }
+                          ? { backgroundColor: "#24020E", color: "#FFEDF1" }
+                          : {
+                              backgroundColor: "rgba(255, 255, 255, 0.65)",
+                              color: "#24020E",
+                            }
                       }
-                      className="rounded-2xl px-4 py-2.5 text-sm font-semibold transition hover:bg-[#24020E]/10"
+                      className="rounded-full border border-[#24020E]/15 px-4 py-2 text-sm font-semibold transition"
                     >
                       {item.label}
                     </Link>
                   );
                 })}
 
-                {!user ? (
+                {!currentUser ? (
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <Link
                       href="/sign-in"
                       style={{
                         color: "#24020E",
                         borderColor: "rgba(36, 2, 14, 0.25)",
-                        backgroundColor: "rgba(255, 255, 255, 0.6)",
+                        backgroundColor: "rgba(255, 255, 255, 0.65)",
                       }}
-                      className="rounded-2xl border py-2.5 text-center text-sm font-semibold"
+                      className="rounded-full border py-2 text-center text-sm font-semibold"
                     >
                       Sign In
                     </Link>
                     <Link
                       href="/sign-up"
-                      style={{ backgroundColor: "#24020E", color: "#F4E2E6" }}
-                      className="rounded-2xl py-2.5 text-center text-sm font-semibold"
+                      style={{ backgroundColor: "#24020E", color: "#FFEDF1" }}
+                      className="rounded-full py-2 text-center text-sm font-semibold"
                     >
                       Sign Up
                     </Link>
                   </div>
                 ) : (
-                  <div className="mt-2 rounded-2xl bg-white/55 p-3">
-                    <div className="mb-2.5 flex items-center gap-2.5 border-b border-[#24020E]/10 pb-2.5">
-                      {user.image ? (
-                        <img
-                          src={user.image}
-                          alt={user.name}
-                          className="h-9 w-9 rounded-full object-cover"
-                        />
-                      ) : (
-                        <span
-                          style={{
-                            backgroundColor: "#24020E",
-                            color: "#F4E2E6",
-                          }}
-                          className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold"
-                        >
-                          {initials}
-                        </span>
-                      )}
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-[#24020E]">
-                          {user.name}
-                        </p>
-                        <p className="text-xs text-[#24020E]/70 capitalize">
-                          {user.role}
-                        </p>
-                      </div>
+                  <div className="mt-2 rounded-2xl bg-white/65 p-3">
+                    <div className="mb-2.5 flex items-center justify-between gap-2 border-b border-[#24020E]/10 pb-2.5">
+                      <Link
+                        href={PROFILE_PAGE_HREF}
+                        className="flex min-w-0 items-center gap-2.5"
+                      >
+                        {renderAvatar("h-9 w-9 text-xs")}
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold text-[#24020E]">
+                            {currentUser.name}
+                          </p>
+                          <p className="text-xs text-[#24020E]/70 capitalize">
+                            {currentUser.role}
+                          </p>
+                        </div>
+                      </Link>
+
+                      <button
+                        type="button"
+                        onClick={handleLogoutClick}
+                        disabled={loggingOut}
+                        title="Log out"
+                        aria-label="Log out"
+                        style={{ backgroundColor: "#24020E", color: "#FFEDF1" }}
+                        className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full disabled:opacity-50"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                      </button>
                     </div>
 
                     <div className="flex flex-col gap-1">
                       <Link
-                        href={getDashboardHref(user.role)}
+                        href={getDashboardHref(currentUser.role)}
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] hover:bg-[#24020E]/10"
                       >
                         <LayoutDashboard className="h-4 w-4" />
                         <span>Dashboard</span>
                       </Link>
                       <Link
-                        href="/profile-settings"
+                        href={PROFILE_PAGE_HREF}
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] hover:bg-[#24020E]/10"
                       >
                         <Settings className="h-4 w-4" />
                         <span>Profile Settings</span>
                       </Link>
-                      <button
-                        type="button"
-                        onClick={handleLogoutClick}
-                        disabled={loggingOut}
-                        style={{ backgroundColor: "#24020E", color: "#F4E2E6" }}
-                        className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold disabled:opacity-50"
-                      >
-                        <LogOut className="h-4 w-4" />
-                        <span>{loggingOut ? "Logging out..." : "Logout"}</span>
-                      </button>
                     </div>
                   </div>
                 )}
@@ -467,5 +573,13 @@ export default function Navbar({ user = null, onLogout }: NavbarProps) {
         </AnimatePresence>
       </div>
     </header>
+  );
+}
+
+export default function Navbar(props: NavbarProps) {
+  return (
+    <Suspense fallback={null}>
+      <NavbarInner {...props} />
+    </Suspense>
   );
 }

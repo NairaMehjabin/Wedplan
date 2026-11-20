@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { Cormorant_Garamond, Plus_Jakarta_Sans } from "next/font/google";
-import Navbar, { type NavbarUser } from "./components/Navbar";
+import Navbar from "./components/Navbar";
 import "./globals.css";
 
 const curlyTitle = localFont({
@@ -29,22 +29,16 @@ export const metadata: Metadata = {
     "Discover wedding services, manage bookings, and plan every celebration moment with WedPlan.",
 };
 
-async function getSessionUser(): Promise<NavbarUser | null> {
-  return null;
-}
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const user = await getSessionUser();
-
   return (
     <html
       lang="en"
       className={`${curlyTitle.variable} ${cormorant.variable} ${jakarta.variable}`}
     >
       <body className="min-h-screen bg-[#F4E2E6] font-[var(--font-jakarta)] text-[#24020E] antialiased">
-        <Navbar user={user} />
+        <Navbar />
         <main className="w-full">{children}</main>
       </body>
     </html>
