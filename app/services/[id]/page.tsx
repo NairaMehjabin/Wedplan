@@ -4,6 +4,7 @@ import React, { Suspense, useState, useEffect, use } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import {
   ArrowLeft,
   Calendar,
@@ -47,6 +48,46 @@ function hasAuthSession(): boolean {
   const token = window.localStorage.getItem("wedplan_token");
   const user = window.localStorage.getItem("wedplan_user");
   return Boolean(token || user);
+}
+
+function validateEventDate(dateStr: string): string | null {
+  const trimmed = dateStr.trim();
+  if (!trimmed) {
+    return "Please select an event date.";
+  }
+
+  // Match YYYY-MM-DD strictly so partial/malformed dates are caught
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (!match) {
+    return "Please enter a valid event date.";
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return "That calendar date does not exist. Please pick a valid date.";
+  }
+
+  const now = new Date();
+  const todayUtc = Date.UTC(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
+
+  if (parsed.getTime() < todayUtc) {
+    return "Event date cannot be in the past. Please choose today or a future date.";
+  }
+
+  return null;
 }
 
 function ServiceDetailContent({ params }: PageProps) {
@@ -136,9 +177,10 @@ function ServiceDetailContent({ params }: PageProps) {
         }
       } catch (err) {
         if (active) {
-          setError(
-            err instanceof Error ? err.message : "Could not load this service."
-          );
+          const msg =
+            err instanceof Error ? err.message : "Could not load this service.";
+          setError(msg);
+          toast.error(msg);
         }
       } finally {
         if (active) {
@@ -177,24 +219,47 @@ function ServiceDetailContent({ params }: PageProps) {
     setIsBookingModalOpen(false);
   };
 
+  const reportBookingError = (msg: string) => {
+    setBookingFeedback({ type: "error", text: msg });
+    toast.error(msg);
+  };
+
   const handleBookingSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setBookingFeedback(null);
 
     if (!hasAuthSession()) {
+      const authMsg = "Please sign in to submit a booking request.";
+      toast.error(authMsg);
       router.replace(
         `/sign-in?redirect=${encodeURIComponent(pathname || `/services/${id}`)}`
       );
       return;
     }
 
-    if (!service) return;
+    if (!service) {
+      reportBookingError("Service details are missing. Please refresh and try again.");
+      return;
+    }
 
-    if (!eventDate.trim() || !eventLocation.trim()) {
-      setBookingFeedback({
-        type: "error",
-        text: "Please enter both an Event Date and Event Location.",
-      });
+    if (!eventDate.trim() && !eventLocation.trim()) {
+      reportBookingError("Please fill in both Event Date and Event Location.");
+      return;
+    }
+
+    if (!eventDate.trim()) {
+      reportBookingError("Event Date is required.");
+      return;
+    }
+
+    if (!eventLocation.trim()) {
+      reportBookingError("Event Location is required.");
+      return;
+    }
+
+    const dateError = validateEventDate(eventDate);
+    if (dateError) {
+      reportBookingError(dateError);
       return;
     }
 
@@ -215,36 +280,33 @@ function ServiceDetailContent({ params }: PageProps) {
         body: JSON.stringify({
           serviceId: service._id,
           vendorId: service.vendorId,
-          eventDate,
+          eventDate: eventDate.trim(),
           eventLocation: eventLocation.trim(),
           message: message.trim(),
           status: "Pending",
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (!res.ok || data?.success === false) {
         throw new Error(
-          data?.message || "Could not submit booking request."
+          data?.message || `Could not submit booking request (Status: ${res.status}).`
         );
       }
 
-      setBookingFeedback({
-        type: "success",
-        text: "Booking request sent! Status: Pending.",
-      });
+      const successMsg = "Booking request sent! Status: Pending.";
+      setBookingFeedback({ type: "success", text: successMsg });
+      toast.success(successMsg);
       setEventDate("");
       setEventLocation("");
       setMessage("");
     } catch (err) {
-      setBookingFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Something went wrong while booking.",
-      });
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while booking.";
+      reportBookingError(errMsg);
     } finally {
       setSubmitting(false);
     }
@@ -523,6 +585,7 @@ function ServiceDetailContent({ params }: PageProps) {
             className="fixed inset-0 z-50 flex items-center justify-center bg-[#24020E]/55 p-4 backdrop-blur-xs"
           >
             <motion.form
+              noValidate
               onSubmit={handleBookingSubmit}
               onClick={(e) => e.stopPropagation()}
               initial={{ opacity: 0, scale: 0.94, y: 14 }}
@@ -565,7 +628,6 @@ function ServiceDetailContent({ params }: PageProps) {
                 <input
                   id="eventDate"
                   type="date"
-                  required
                   value={eventDate}
                   onChange={(e) => setEventDate(e.target.value)}
                   className="w-full rounded-2xl border-2 border-[#24020E]/25 bg-white px-4 py-2.5 text-sm text-[#24020E] focus:border-[#24020E] focus:outline-none"
@@ -582,7 +644,6 @@ function ServiceDetailContent({ params }: PageProps) {
                 <input
                   id="eventLocation"
                   type="text"
-                  required
                   placeholder="Venue or city..."
                   value={eventLocation}
                   onChange={(e) => setEventLocation(e.target.value)}

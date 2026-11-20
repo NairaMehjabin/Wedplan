@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import {
   Sparkles,
   Heart,
@@ -99,6 +100,16 @@ export default function AuthFormView({
     setMode(initialMode);
   }, [initialMode]);
 
+  const reportError = (msg: string) => {
+    setFeedback({ type: "error", text: msg });
+    toast.error(msg);
+  };
+
+  const reportSuccess = (msg: string) => {
+    setFeedback({ type: "success", text: msg });
+    toast.success(msg);
+  };
+
   const switchMode = (next: AuthMode) => {
     setMode(next);
     setFeedback(null);
@@ -151,10 +162,9 @@ export default function AuthFormView({
     setFeedback(null);
 
     if (!IMGBB_API_KEY) {
-      setFeedback({
-        type: "error",
-        text: "ImgBB API key is missing. Paste a direct image URL instead or register without a photo.",
-      });
+      reportError(
+        "ImgBB API key is missing. Paste a direct image URL instead or register without a photo."
+      );
       return;
     }
 
@@ -163,18 +173,13 @@ export default function AuthFormView({
       const uploadedUrl = await uploadBlobToImgBB(file, file.name);
       setUrlDraft(uploadedUrl);
       updatePreviewUrl(uploadedUrl);
-      setFeedback({
-        type: "success",
-        text: "Profile photo uploaded via ImgBB! Adjust framing below if needed.",
-      });
+      reportSuccess("Profile photo uploaded via ImgBB! Adjust framing below if needed.");
     } catch (err) {
-      setFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Image upload failed. Please try another file.",
-      });
+      reportError(
+        err instanceof Error
+          ? err.message
+          : "Image upload failed. Please try another file."
+      );
     } finally {
       setUploadingImage(false);
     }
@@ -193,15 +198,9 @@ export default function AuthFormView({
         throw new Error("URL must start with http:// or https://");
       }
       updatePreviewUrl(trimmed);
-      setFeedback({
-        type: "success",
-        text: "Profile URL preview updated! Adjust framing below if needed.",
-      });
+      reportSuccess("Profile URL preview updated! Adjust framing below if needed.");
     } catch {
-      setFeedback({
-        type: "error",
-        text: "Please enter a valid http:// or https:// image URL.",
-      });
+      reportError("Please enter a valid http:// or https:// image URL.");
     }
   };
 
@@ -245,10 +244,7 @@ export default function AuthFormView({
         const croppedUrl = await uploadBlobToImgBB(blob, "adjusted-pfp.png");
         setUrlDraft(croppedUrl);
         updatePreviewUrl(croppedUrl);
-        setFeedback({
-          type: "success",
-          text: "Adjusted photo saved to ImgBB!",
-        });
+        reportSuccess("Adjusted photo saved to ImgBB!");
       } else {
         const reader = new FileReader();
         const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -257,19 +253,14 @@ export default function AuthFormView({
           reader.readAsDataURL(blob);
         });
         updatePreviewUrl(dataUrl);
-        setFeedback({
-          type: "success",
-          text: "Adjusted preview applied!",
-        });
+        reportSuccess("Adjusted preview applied!");
       }
     } catch (err) {
-      setFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Could not apply adjustment (some external hosts block canvas export; try uploading the file to ImgBB first).",
-      });
+      reportError(
+        err instanceof Error
+          ? err.message
+          : "Could not apply adjustment (some external hosts block canvas export; try uploading the file to ImgBB first)."
+      );
     } finally {
       setApplyingCrop(false);
     }
@@ -281,31 +272,22 @@ export default function AuthFormView({
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
-      setFeedback({
-        type: "error",
-        text: "Please enter both your email and password.",
-      });
+      reportError("Please enter both your email and password.");
       return;
     }
 
     if (mode === "sign-up") {
       if (!name.trim()) {
-        setFeedback({
-          type: "error",
-          text: "Please enter your full name.",
-        });
+        reportError("Please enter your full name.");
         return;
       }
       if (role === "vendor" && !businessName.trim()) {
-        setFeedback({
-          type: "error",
-          text: "Please enter your vendor or studio business name.",
-        });
+        reportError("Please enter your vendor or studio business name.");
         return;
       }
       const pwError = validatePassword(password);
       if (pwError) {
-        setFeedback({ type: "error", text: pwError });
+        reportError(pwError);
         return;
       }
     }
@@ -340,7 +322,7 @@ export default function AuthFormView({
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (!res.ok || data?.success === false) {
         throw new Error(
@@ -351,11 +333,14 @@ export default function AuthFormView({
         );
       }
 
-      if (data?.token && typeof window !== "undefined") {
-        window.localStorage.setItem("wedplan_token", data.token);
-      }
-      if (data?.user && typeof window !== "undefined") {
-        window.localStorage.setItem("wedplan_user", JSON.stringify(data.user));
+      if (typeof window !== "undefined") {
+        if (data?.token) {
+          window.localStorage.setItem("wedplan_token", data.token);
+        }
+        if (data?.user) {
+          window.localStorage.setItem("wedplan_user", JSON.stringify(data.user));
+        }
+        window.dispatchEvent(new Event("wedplan-auth-changed"));
       }
 
       const resolvedRole: string =
@@ -363,32 +348,29 @@ export default function AuthFormView({
         data?.data?.role ||
         (mode === "sign-up" ? role : "customer");
 
-      setFeedback({
-        type: "success",
-        text:
-          mode === "sign-in"
-            ? `Signed in as ${resolvedRole}! Redirecting...`
-            : `Registered as ${resolvedRole}! Redirecting to your dashboard...`,
-      });
+      const successText =
+        mode === "sign-in"
+          ? `Signed in as ${resolvedRole}! Redirecting...`
+          : `Registered as ${resolvedRole}! Redirecting to your dashboard...`;
+      reportSuccess(successText);
 
       const targetHref =
         data?.redirectTo || getRoleRedirect(resolvedRole, redirectParam);
       router.refresh();
       router.push(targetHref);
     } catch (err) {
-      setFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Authentication failed. Please try again.",
-      });
+      reportError(
+        err instanceof Error
+          ? err.message
+          : "Authentication failed. Please try again."
+      );
     } finally {
       setSubmitting(false);
     }
   };
 
   const handleGoogleAuth = () => {
+    toast("Redirecting to Google sign-in...", { icon: "✨" });
     const callbackUrl = encodeURIComponent(
       `${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}${
         redirectParam || getRoleRedirect(role)
@@ -501,7 +483,7 @@ export default function AuthFormView({
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form noValidate onSubmit={handleSubmit} className="space-y-4">
                 <AnimatePresence mode="wait">
                   {mode === "sign-up" && (
                     <motion.div
@@ -557,7 +539,6 @@ export default function AuthFormView({
                           <input
                             id="fullName"
                             type="text"
-                            required={mode === "sign-up"}
                             placeholder="Your full name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
@@ -579,7 +560,6 @@ export default function AuthFormView({
                             <input
                               id="businessName"
                               type="text"
-                              required={mode === "sign-up" && role === "vendor"}
                               placeholder="e.g., Velvet Petal Florals"
                               value={businessName}
                               onChange={(e) => setBusinessName(e.target.value)}
@@ -674,7 +654,6 @@ export default function AuthFormView({
                           </div>
                         )}
 
-                        {/* Live Preview & Adjustment Controls */}
                         {imageUrl && (
                           <div className="flex flex-col items-center gap-4 border-t border-dashed border-[#24020E]/15 pt-3.5 sm:flex-row sm:items-start">
                             <div className="relative flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-[#24020E] bg-[#FFEDF1] shadow-[4px_4px_0px_0px_#24020E]">
@@ -813,7 +792,6 @@ export default function AuthFormView({
                     <input
                       id="email"
                       type="email"
-                      required
                       placeholder="you@example.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
@@ -834,7 +812,6 @@ export default function AuthFormView({
                     <input
                       id="password"
                       type={showPassword ? "text" : "password"}
-                      required
                       placeholder="Min 6 chars, 1 uppercase & 1 lowercase"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}

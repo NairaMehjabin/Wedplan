@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
 import {
   ChevronDown,
   LayoutDashboard,
@@ -167,6 +168,7 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
     setCurrentUser(null);
     setDropdownOpen(false);
     setMobileOpen(false);
+    toast("You have been logged out.", { icon: "👋" });
     router.replace("/sign-in");
     router.refresh();
 
