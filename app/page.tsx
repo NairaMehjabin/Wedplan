@@ -1,17 +1,17 @@
 import SunMoonHeroIntro from "./components/SunMoonHeroIntro";
+import FeaturedServices from "./components/FeaturedServices";
 
 export default function HomePage() {
   return (
     <main
-      style={{ backgroundColor: "#F4E2E6", color: "#24020E" }}
+      style={{ backgroundColor: "#FFEDF1", color: "#24020E" }}
       className="min-h-screen"
     >
-      <SunMoonHeroIntro waveFill="#F4E2E6" />
+      <SunMoonHeroIntro waveFill="#FFEDF1" />
 
-      {/* Next sections (Featured Services, Categories, Why Choose WedPlan, etc.) go here */}
-      <section className="mx-auto max-w-6xl px-6 py-24">
-        <h2 className="text-2xl font-semibold">Featured Wedding Services</h2>
-      </section>
+      <FeaturedServices />
+
+      {/* Next sections (Categories, Why Choose WedPlan, etc.) go here */}
     </main>
   );
 }

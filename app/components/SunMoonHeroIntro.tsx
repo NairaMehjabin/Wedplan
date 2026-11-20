@@ -15,8 +15,11 @@ interface SunMoonHeroIntroProps {
   waveFill?: string;
 }
 
+const WAVE_PATH =
+  "M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V120H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z";
+
 export default function SunMoonHeroIntro({
-  waveFill = "#F4E2E6",
+  waveFill = "#FFEDF1",
 }: SunMoonHeroIntroProps) {
   const [phase, setPhase] = useState<HeroPhase>("checking");
   const [showScrollCue, setShowScrollCue] = useState(false);
@@ -275,7 +278,7 @@ export default function SunMoonHeroIntro({
                 className="absolute translate-y-5 h-[375px] w-[375px] rounded-full sm:h-[470px] sm:w-[470px] md:-right-32 md:translate-y-7 md:h-[540px] md:w-[540px] lg:-right-40 lg:h-[620px] lg:w-[620px]"
               />
 
-              {/* Layer 3 (Smallest / Top): Glassmorphic Soft Pink (#F4E2E6) */}
+              {/* Layer 3 (Smallest / Top): Glassmorphic Soft Pink (#FFEDF1) */}
               <motion.div
                 initial={{ x: "110%", opacity: 0 }}
                 animate={{ x: "0%", opacity: 1 }}
@@ -286,7 +289,7 @@ export default function SunMoonHeroIntro({
                 }}
                 style={{
                   background:
-                    "linear-gradient(135deg, rgba(244, 226, 230, 0.78) 0%, rgba(244, 226, 230, 0.58) 100%)",
+                    "linear-gradient(135deg, rgba(255, 237, 241, 0.82) 0%, rgba(255, 237, 241, 0.62) 100%)",
                   backdropFilter: "blur(18px)",
                   WebkitBackdropFilter: "blur(18px)",
                   border: "1.5px solid rgba(255, 255, 255, 0.78)",
@@ -345,7 +348,7 @@ export default function SunMoonHeroIntro({
                   <div className="mt-3 flex flex-wrap items-center justify-center gap-2 md:justify-start">
                     <Link
                       href="/services"
-                      style={{ backgroundColor: "#24020E", color: "#F4E2E6" }}
+                      style={{ backgroundColor: "#24020E", color: "#FFEDF1" }}
                       className="inline-flex items-center justify-center rounded-full px-4 py-2 text-xs font-semibold shadow-sm transition hover:opacity-90 active:scale-[0.98] sm:px-5 sm:py-2.5 sm:text-sm"
                     >
                       Explore Services
@@ -355,15 +358,27 @@ export default function SunMoonHeroIntro({
               </motion.div>
             </div>
 
-            {/* Bottom SVG Wave Divider */}
-            <div className="pointer-events-none absolute right-0 bottom-0 left-0 z-20 translate-y-[18px] overflow-hidden leading-[0]">
+            {/* Layered Off-White Wave Border + Pink Wave Divider */}
+            <div className="pointer-events-none absolute right-0 bottom-0 left-0 z-20 translate-y-[18px] leading-[0]">
+              {/* Top Off-White Wave Rim */}
               <svg
                 viewBox="0 0 1200 120"
                 preserveAspectRatio="none"
-                className="relative block h-[85px] w-[calc(115%+1.3px)] sm:h-[110px]"
+                aria-hidden="true"
+                className="relative block h-[85px] w-[calc(115%+1.3px)] -translate-y-2 sm:h-[110px] sm:-translate-y-3"
+                style={{ fill: "#FCF9F4" }}
+              >
+                <path d={WAVE_PATH} />
+              </svg>
+
+              {/* Main Pink Wave (#FFEDF1) Overlapping Below the Off-White Rim */}
+              <svg
+                viewBox="0 0 1200 120"
+                preserveAspectRatio="none"
+                className="pointer-events-none absolute inset-0 block h-[85px] w-[calc(115%+1.3px)] translate-y-1 sm:h-[110px] sm:translate-y-1.5"
                 style={{ fill: waveFill }}
               >
-                <path d="M321.39,56.44c58-10.79,114.16-30.13,172-41.86,82.39-16.72,168.19-17.73,250.45-.39C823.78,31,906.67,72,985.66,92.83c70.05,18.48,146.53,26.09,214.34,3V120H0V27.35A600.21,600.21,0,0,0,321.39,56.44Z" />
+                <path d={WAVE_PATH} />
               </svg>
             </div>
 
@@ -375,7 +390,7 @@ export default function SunMoonHeroIntro({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 6 }}
                   transition={{ duration: 0.3, delay: 0.25 }}
-                  className="pointer-events-none absolute bottom-14 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-1.5 rounded-full bg-[#24020E]/75 px-4 py-2 text-xs tracking-widest text-[#F4E2E6] uppercase backdrop-blur-sm sm:bottom-16"
+                  className="pointer-events-none absolute bottom-14 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-1.5 rounded-full bg-[#24020E]/75 px-4 py-2 text-xs tracking-widest text-[#FFEDF1] uppercase backdrop-blur-sm sm:bottom-16"
                 >
                   <span>Scroll Down</span>
                   <motion.div
