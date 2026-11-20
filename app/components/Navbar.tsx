@@ -12,16 +12,17 @@ import {
   Menu,
   Settings,
   Sparkles,
+  UserCircle2,
   X,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-const PROFILE_PAGE_HREF = "/profile-settings";
 
 export type UserRole = "customer" | "vendor" | "admin";
 
 export interface NavbarUser {
-  id: string;
+  id?: string;
+  _id?: string;
   name: string;
   email: string;
   image?: string | null;
@@ -32,6 +33,26 @@ export interface NavbarUser {
 interface NavbarProps {
   user?: NavbarUser | null;
   onLogout?: () => Promise<void> | void;
+}
+
+function getUserId(user?: NavbarUser | null): string {
+  return String(user?.id || user?._id || "");
+}
+
+function getProfileHref(user?: NavbarUser | null): string {
+  if (!user) return "/profile";
+  const id = getUserId(user);
+  switch (user.role) {
+    case "admin":
+      return "/profile";
+    case "vendor":
+      return id ? `/profile/vendor/${encodeURIComponent(id)}` : "/profile/vendor";
+    case "customer":
+    default:
+      return id
+        ? `/profile/customer/${encodeURIComponent(id)}`
+        : "/profile/customer";
+  }
 }
 
 function getDashboardHref(role?: UserRole): string {
@@ -183,26 +204,38 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
       }
     } finally {
       setLoggingOut(false);
-      if (typeof window !== "undefined" && window.location.pathname !== "/sign-in") {
+      if (
+        typeof window !== "undefined" &&
+        window.location.pathname !== "/sign-in"
+      ) {
         window.location.replace("/sign-in");
       }
     }
   };
+
+  const profileHref = getProfileHref(currentUser);
 
   const navLinks = currentUser
     ? [
         { label: "Home", href: "/" },
         { label: "Browse Services", href: "/services" },
         { label: "Dashboard", href: getDashboardHref(currentUser.role) },
-        { label: "Profile Settings", href: PROFILE_PAGE_HREF },
+        { label: "Profile", href: profileHref, matchPrefix: "/profile" },
       ]
     : [
         { label: "Home", href: "/" },
         { label: "Browse Services", href: "/services" },
       ];
 
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname?.startsWith(href);
+  const isActive = (href: string, matchPrefix?: string) => {
+    if (href === "/") return pathname === "/";
+    if (matchPrefix) {
+      return (
+        pathname === matchPrefix || pathname?.startsWith(`${matchPrefix}/`)
+      );
+    }
+    return pathname === href || pathname?.startsWith(`${href}/`);
+  };
 
   const initials = (currentUser?.name || "W")
     .split(" ")
@@ -280,10 +313,10 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
             className="hidden flex-1 items-center justify-center gap-2 md:flex"
           >
             {navLinks.map((item) => {
-              const active = isActive(item.href);
+              const active = isActive(item.href, item.matchPrefix);
               return (
                 <Link
-                  key={item.href}
+                  key={item.label}
                   href={item.href}
                   style={
                     active
@@ -330,7 +363,10 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                 </Link>
               </>
             ) : (
-              <div ref={dropdownRef} className="relative flex items-center gap-1.5">
+              <div
+                ref={dropdownRef}
+                className="relative flex items-center gap-1.5"
+              >
                 <div
                   style={{
                     backgroundColor: "rgba(255, 255, 255, 0.74)",
@@ -340,7 +376,7 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                   className="inline-flex items-center gap-1 rounded-full border py-1 pr-1.5 pl-1.5 text-xs font-semibold shadow-2xs"
                 >
                   <Link
-                    href={PROFILE_PAGE_HREF}
+                    href={profileHref}
                     title="Go to Profile"
                     className="inline-flex items-center gap-2 rounded-full pr-1 transition hover:opacity-85"
                   >
@@ -400,7 +436,7 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                       className="absolute top-full right-0 mt-2 w-60 origin-top-right rounded-2xl border p-2 shadow-xl"
                     >
                       <Link
-                        href={PROFILE_PAGE_HREF}
+                        href={profileHref}
                         className="mb-1.5 flex items-center gap-3 rounded-xl bg-[#24020E]/5 px-3 py-2.5 transition hover:bg-[#24020E]/10"
                       >
                         {renderAvatar("h-9 w-9 text-xs")}
@@ -415,6 +451,15 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                       </Link>
 
                       <Link
+                        href={profileHref}
+                        role="menuitem"
+                        className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] transition hover:bg-[#24020E]/10"
+                      >
+                        <UserCircle2 className="h-4 w-4" />
+                        <span>View Profile</span>
+                      </Link>
+
+                      <Link
                         href={getDashboardHref(currentUser.role)}
                         role="menuitem"
                         className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] transition hover:bg-[#24020E]/10"
@@ -424,12 +469,12 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                       </Link>
 
                       <Link
-                        href={PROFILE_PAGE_HREF}
+                        href="/profile-settings"
                         role="menuitem"
                         className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] transition hover:bg-[#24020E]/10"
                       >
                         <Settings className="h-4 w-4" />
-                        <span>Profile Settings</span>
+                        <span>Account Settings</span>
                       </Link>
 
                       <div className="my-1.5 h-px bg-[#24020E]/12" />
@@ -479,10 +524,10 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
             >
               <div className="mt-3 flex flex-col gap-1.5 border-t border-[#24020E]/15 pt-3 pb-1">
                 {navLinks.map((item) => {
-                  const active = isActive(item.href);
+                  const active = isActive(item.href, item.matchPrefix);
                   return (
                     <Link
-                      key={item.href}
+                      key={item.label}
                       href={item.href}
                       style={
                         active
@@ -524,7 +569,7 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                   <div className="mt-2 rounded-2xl bg-white/65 p-3">
                     <div className="mb-2.5 flex items-center justify-between gap-2 border-b border-[#24020E]/10 pb-2.5">
                       <Link
-                        href={PROFILE_PAGE_HREF}
+                        href={profileHref}
                         className="flex min-w-0 items-center gap-2.5"
                       >
                         {renderAvatar("h-9 w-9 text-xs")}
@@ -553,6 +598,13 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
 
                     <div className="flex flex-col gap-1">
                       <Link
+                        href={profileHref}
+                        className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] hover:bg-[#24020E]/10"
+                      >
+                        <UserCircle2 className="h-4 w-4" />
+                        <span>View Profile</span>
+                      </Link>
+                      <Link
                         href={getDashboardHref(currentUser.role)}
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] hover:bg-[#24020E]/10"
                       >
@@ -560,11 +612,11 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                         <span>Dashboard</span>
                       </Link>
                       <Link
-                        href={PROFILE_PAGE_HREF}
+                        href="/profile-settings"
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] hover:bg-[#24020E]/10"
                       >
                         <Settings className="h-4 w-4" />
-                        <span>Profile Settings</span>
+                        <span>Account Settings</span>
                       </Link>
                     </div>
                   </div>
