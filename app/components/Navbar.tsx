@@ -480,15 +480,6 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                         <span>Dashboard</span>
                       </Link>
 
-                      <Link
-                        href="/profile-settings"
-                        role="menuitem"
-                        className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] transition hover:bg-[#24020E]/10"
-                      >
-                        <Settings className="h-4 w-4" />
-                        <span>Account Settings</span>
-                      </Link>
-
                       <div className="my-1.5 h-px bg-[#24020E]/12" />
 
                       <button
@@ -496,7 +487,7 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                         role="menuitem"
                         onClick={handleLogoutClick}
                         disabled={loggingOut}
-                        style={{ color: "#24020E" }}
+                        style={{ color: "#78d1ec" }}
                         className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm font-semibold transition hover:bg-[#24020E] hover:text-[#FFEDF1] disabled:opacity-50"
                       >
                         <LogOut className="h-4 w-4" />
@@ -626,13 +617,6 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
                       >
                         <LayoutDashboard className="h-4 w-4" />
                         <span>Dashboard</span>
-                      </Link>
-                      <Link
-                        href="/profile-settings"
-                        className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-[#24020E] hover:bg-[#24020E]/10"
-                      >
-                        <Settings className="h-4 w-4" />
-                        <span>Account Settings</span>
                       </Link>
                     </div>
                   </div>
