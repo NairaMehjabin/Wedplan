@@ -22,6 +22,16 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
+interface SessionUser {
+  _id?: string;
+  id?: string;
+  userId?: string;
+  sub?: string;
+  name?: string;
+  email?: string;
+  role?: string;
+}
+
 interface VendorProfileRecord {
   _id?: string;
   id?: string;
@@ -58,12 +68,50 @@ interface PageProps {
 const FALLBACK_IMAGE =
   "https://i.pinimg.com/736x/75/b6/2b/75b62baf81b9aacb79b6338d4df69043.jpg";
 
-function resolveVendorId(
-  vendorId?: string | { _id?: string; id?: string } | null
+function resolveEntityId(
+  value?: string | { _id?: string; id?: string } | null
 ): string {
-  if (!vendorId) return "";
-  if (typeof vendorId === "string") return vendorId.trim();
-  return String(vendorId._id || vendorId.id || "").trim();
+  if (!value) return "";
+  if (typeof value === "string") return value.trim();
+  return String(value._id || value.id || "").trim();
+}
+
+function resolveUserId(user?: SessionUser | null): string {
+  if (!user) return "";
+  return String(user._id || user.id || user.userId || user.sub || "").trim();
+}
+
+function decodeJwtPayload(token: string | null): SessionUser | null {
+  if (!token) return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 2 && parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      "="
+    );
+    const decoded = atob(padded);
+    return JSON.parse(decoded) as SessionUser;
+  } catch {
+    return null;
+  }
+}
+
+function getCachedUser(token: string | null): SessionUser | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const rawUser = window.localStorage.getItem("wedplan_user");
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser) as SessionUser;
+      if (parsed && typeof parsed === "object") {
+        return parsed;
+      }
+    }
+  } catch {
+    // Ignore malformed localStorage payload
+  }
+  return decodeJwtPayload(token);
 }
 
 function buildDicebearAvatar(seed: string): string {
@@ -121,22 +169,30 @@ function getAuthToken(): string | null {
   return null;
 }
 
-async function hasActiveSession(token: string | null): Promise<boolean> {
+async function fetchSessionUser(
+  token: string | null
+): Promise<SessionUser | null> {
   try {
     const res = await fetch(`${API_BASE}/api/auth/me`, {
       cache: "no-store",
       credentials: "include",
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
-    if (!res.ok) return false;
+    if (!res.ok) return null;
     const data = await res.json().catch(() => null);
-    if (data?.user && typeof window !== "undefined") {
-      window.localStorage.setItem("wedplan_user", JSON.stringify(data.user));
+    const user = (data?.user || data?.data || null) as SessionUser | null;
+    if (user && typeof window !== "undefined") {
+      window.localStorage.setItem("wedplan_user", JSON.stringify(user));
     }
-    return Boolean(data?.user || data?.success);
+    return user;
   } catch {
-    return false;
+    return null;
   }
+}
+
+async function hasActiveSession(token: string | null): Promise<boolean> {
+  const user = await fetchSessionUser(token);
+  return Boolean(user || resolveUserId(user));
 }
 
 function validateEventDate(dateStr: string): string | null {
@@ -202,6 +258,7 @@ function ServiceDetailContent({ params }: PageProps) {
   const [vendorProfile, setVendorProfile] = useState<VendorProfileRecord | null>(
     null
   );
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
@@ -233,12 +290,23 @@ function ServiceDetailContent({ params }: PageProps) {
         setVendorProfile(null);
 
         const token = getAuthToken();
+        const cachedUser = getCachedUser(token);
+        if (cachedUser && active) {
+          setCurrentUser(cachedUser);
+        }
 
-        const res = await fetch(`${API_BASE}/api/services/${id}`, {
-          cache: "no-store",
-          credentials: "include",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
+        const [res, sessionUser] = await Promise.all([
+          fetch(`${API_BASE}/api/services/${id}`, {
+            cache: "no-store",
+            credentials: "include",
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          }),
+          fetchSessionUser(token),
+        ]);
+
+        if (active && sessionUser) {
+          setCurrentUser(sessionUser);
+        }
 
         const data = await res.json();
 
@@ -252,7 +320,7 @@ function ServiceDetailContent({ params }: PageProps) {
           const loadedService: ServiceDetail = data.data;
           setService(loadedService);
 
-          const vendorIdStr = resolveVendorId(loadedService.vendorId);
+          const vendorIdStr = resolveEntityId(loadedService.vendorId);
           if (vendorIdStr) {
             try {
               const vRes = await fetch(
@@ -314,7 +382,48 @@ function ServiceDetailContent({ params }: PageProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isBookingModalOpen]);
 
-  const openBookingModal = () => {
+  const isOwnVendorService = async (
+    targetService: ServiceDetail
+  ): Promise<boolean> => {
+    const token = getAuthToken();
+    const activeUser =
+      (await fetchSessionUser(token)) || currentUser || getCachedUser(token);
+    if (activeUser) {
+      setCurrentUser(activeUser);
+    }
+
+    const role = String(activeUser?.role || "").toLowerCase();
+    const activeUserId = resolveUserId(activeUser);
+    const serviceVendorId = resolveEntityId(targetService.vendorId);
+
+    if (role === "vendor" && activeUserId && serviceVendorId) {
+      return activeUserId === serviceVendorId;
+    }
+
+    // Fallback when backend omits vendorId on a service owned by this vendor
+    if (role === "vendor" && !serviceVendorId) {
+      const ownerLabel = String(
+        targetService.vendorName || targetService.businessName || ""
+      )
+        .trim()
+        .toLowerCase();
+      const userName = String(activeUser?.name || "").trim().toLowerCase();
+      if (ownerLabel && userName && ownerLabel === userName) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const openBookingModal = async () => {
+    if (!service) return;
+
+    if (await isOwnVendorService(service)) {
+      toast.error("Vendors cannot book their own services.");
+      return;
+    }
+
     setBookingFeedback(null);
     setIsBookingModalOpen(true);
   };
@@ -337,6 +446,12 @@ function ServiceDetailContent({ params }: PageProps) {
       reportBookingError(
         "Service details are missing. Please refresh and try again."
       );
+      return;
+    }
+
+    if (await isOwnVendorService(service)) {
+      setIsBookingModalOpen(false);
+      toast.error("Vendors cannot book their own services.");
       return;
     }
 
@@ -364,7 +479,7 @@ function ServiceDetailContent({ params }: PageProps) {
     try {
       setSubmitting(true);
       const token = getAuthToken();
-      const vendorIdStr = resolveVendorId(service.vendorId);
+      const vendorIdStr = resolveEntityId(service.vendorId);
 
       const res = await fetch(`${API_BASE}/api/bookings`, {
         method: "POST",
@@ -467,7 +582,7 @@ function ServiceDetailContent({ params }: PageProps) {
 
   const mainImage = galleryImages[activeImageIndex] || FALLBACK_IMAGE;
 
-  const vendorIdStr = resolveVendorId(service.vendorId);
+  const vendorIdStr = resolveEntityId(service.vendorId);
   const isLinkedVendor = Boolean(vendorIdStr);
   const ownerName =
     vendorProfile?.name ||

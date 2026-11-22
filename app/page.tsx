@@ -1,6 +1,7 @@
 import SunMoonHeroIntro from "./components/SunMoonHeroIntro";
 import FeaturedServices from "./components/FeaturedServices";
 import WeddingCategoriesHub from "./components/WeddingCategoriesHub";
+import WedPlanEditorialSections from "./components/WedPlanEditorialSections";
 
 export default function HomePage() {
   return (
@@ -14,7 +15,7 @@ export default function HomePage() {
 
       <WeddingCategoriesHub />
 
-      {/* Next section one by one: Why Choose WedPlan? */}
+      <WedPlanEditorialSections />
     </main>
   );
 }
