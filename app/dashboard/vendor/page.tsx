@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, {
+  Suspense,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -31,6 +37,7 @@ import {
   Home,
   Sparkles,
   Store,
+  ShieldCheck,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -192,7 +199,21 @@ function bookingStatusStyle(status: BookingStatus): {
   }
 }
 
-export default function VendorDashboardPage() {
+function VendorDashboardLoading() {
+  return (
+    <div
+      style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
+      className="flex min-h-screen items-center justify-center pt-20"
+    >
+      <div className="flex items-center gap-2 text-xs font-semibold text-[#24020E]/75">
+        <Loader2 className="h-4 w-4 animate-spin text-teal-800" />
+        <span>Loading vendor dashboard...</span>
+      </div>
+    </div>
+  );
+}
+
+function VendorDashboardContent() {
   const router = useRouter();
 
   const [mounted, setMounted] = useState(false);
@@ -249,33 +270,34 @@ export default function VendorDashboardPage() {
     setMounted(true);
   }, []);
 
-  useEffect(() => {
-    if (!mounted) return;
-    const cached = readStoredUser();
-    setUser(cached);
-
+  const refreshCurrentUser = useCallback(async () => {
     const token = getToken();
     if (!token) return;
 
-    void (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/auth/me`, {
-          credentials: "include",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          const fresh = data?.user || data?.data;
-          if (fresh) {
-            window.localStorage.setItem("wedplan_user", JSON.stringify(fresh));
-            setUser(fresh);
-          }
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me`, {
+        cache: "no-store",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        const fresh = data?.user || data?.data;
+        if (fresh) {
+          window.localStorage.setItem("wedplan_user", JSON.stringify(fresh));
+          setUser(fresh);
         }
-      } catch {
-        // Keep cached session on transient error
       }
-    })();
-  }, [mounted]);
+    } catch {
+      // Keep cached session on transient error
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    setUser(readStoredUser());
+    void refreshCurrentUser();
+  }, [mounted, refreshCurrentUser]);
 
   const fetchVendorData = useCallback(async () => {
     const token = getToken();
@@ -711,38 +733,36 @@ export default function VendorDashboardPage() {
     }
 
     const token = getToken();
-    if (!token) return;
+    if (!token) {
+      toast.error("Please sign in as a vendor first.");
+      return;
+    }
 
     try {
       setUpgradingPlan(true);
-      const res = await fetch(`${API_BASE}/api/subscriptions/upgrade`, {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ plan: "premium" }),
-      });
+      const res = await fetch(
+        `${API_BASE}/api/subscriptions/create-checkout-session`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ plan: "premium" }),
+        }
+      );
 
       const data = await res.json().catch(() => null);
-      if (!res.ok || data?.success === false) {
-        throw new Error(data?.message || "Upgrade failed");
+      if (!res.ok || data?.success === false || !data?.url) {
+        throw new Error(data?.message || "Could not start Stripe checkout");
       }
 
-      const nextUser: VendorUser = {
-        ...(user || { name: "Vendor", email: "" }),
-        ...(data?.user || {}),
-        subscriptionPlan: "premium",
-      };
-      window.localStorage.setItem("wedplan_user", JSON.stringify(nextUser));
-      setUser(nextUser);
-      toast.success("Welcome to Premium! Unlimited active services unlocked.");
+      window.location.href = String(data.url);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to upgrade subscription"
+        err instanceof Error ? err.message : "Failed to start Stripe checkout"
       );
-    } finally {
       setUpgradingPlan(false);
     }
   };
@@ -1300,7 +1320,6 @@ export default function VendorDashboardPage() {
                     />
                   </div>
 
-                  {/* Service Image: Direct URL or File Upload via ImgBB */}
                   <div className="space-y-2">
                     <label className="block text-[10px] font-bold tracking-wider uppercase">
                       Service Image (Direct URL or ImgBB File Upload) *
@@ -1698,6 +1717,10 @@ export default function VendorDashboardPage() {
                       <li>• Premium Vendor Badge</li>
                       <li>• All Free Plan Features</li>
                     </ul>
+                    <p className="mt-3 inline-flex items-center gap-1.5 text-[11px] text-[#24020E]/65">
+                      <ShieldCheck className="h-3.5 w-3.5 text-teal-800" />
+                      <span>Secured via Stripe Checkout</span>
+                    </p>
                   </div>
 
                   <div className="mt-6">
@@ -1720,8 +1743,8 @@ export default function VendorDashboardPage() {
                         )}
                         <span>
                           {upgradingPlan
-                            ? "Upgrading..."
-                            : "Upgrade to Premium"}
+                            ? "Redirecting to Stripe..."
+                            : "Pay with Stripe"}
                         </span>
                       </button>
                     )}
@@ -1733,6 +1756,7 @@ export default function VendorDashboardPage() {
         </div>
       </div>
 
+      {/* Modals */}
       <AnimatePresence>
         {viewingService && (
           <motion.div
@@ -2013,5 +2037,13 @@ export default function VendorDashboardPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function VendorDashboardPage() {
+  return (
+    <Suspense fallback={<VendorDashboardLoading />}>
+      <VendorDashboardContent />
+    </Suspense>
   );
 }
