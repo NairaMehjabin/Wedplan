@@ -10,11 +10,11 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Settings,
   Sparkles,
   UserCircle2,
   X,
 } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -182,8 +182,12 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
     setLoggingOut(true);
 
     if (typeof window !== "undefined") {
+      window.sessionStorage.setItem("wedplan_skip_auto_login", "1");
+      window.localStorage.removeItem("wedplan_pending_role");
       window.localStorage.removeItem("wedplan_token");
       window.localStorage.removeItem("wedplan_user");
+      document.cookie =
+        "wedplan_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
       window.dispatchEvent(new Event("wedplan-auth-changed"));
     }
     setCurrentUser(null);
@@ -194,6 +198,7 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
     router.refresh();
 
     try {
+      await authClient.signOut().catch(() => null);
       if (onLogout) {
         await onLogout();
       } else {

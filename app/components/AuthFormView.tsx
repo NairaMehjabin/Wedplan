@@ -161,13 +161,18 @@ export default function AuthFormView({
     toast.success(msg);
   };
 
-  // Sync Better Auth Google session into WedPlan JWT + MongoDB User + navbar/footer
+  // Only sync once after an intentional Google sign-in redirect (when wedplan_pending_role is set)
   useEffect(() => {
     if (syncingGoogleRef.current) return;
-    if (
-      typeof window !== "undefined" &&
-      window.sessionStorage.getItem("wedplan_skip_auto_login") === "1"
-    ) {
+    if (typeof window === "undefined") return;
+
+    if (window.sessionStorage.getItem("wedplan_skip_auto_login") === "1") {
+      window.localStorage.removeItem("wedplan_pending_role");
+      return;
+    }
+
+    const pendingRole = window.localStorage.getItem("wedplan_pending_role");
+    if (!pendingRole) {
       return;
     }
 
@@ -175,17 +180,16 @@ export default function AuthFormView({
 
     const syncGoogleSessionIfPresent = async () => {
       try {
-        const { data: sessionData } = await authClient.getSession();
-        if (!sessionData?.user || cancelled) return;
-
         syncingGoogleRef.current = true;
         setGoogleLoading(true);
         setFeedback(null);
 
-        const pendingRole =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem("wedplan_pending_role") || role
-            : role;
+        const { data: sessionData } = await authClient.getSession();
+        if (!sessionData?.user || cancelled) {
+          window.localStorage.removeItem("wedplan_pending_role");
+          setGoogleLoading(false);
+          return;
+        }
 
         const res = await fetch(`${API_BASE}/api/auth/google-sync`, {
           method: "POST",
@@ -201,9 +205,7 @@ export default function AuthFormView({
           );
         }
 
-        if (typeof window !== "undefined") {
-          window.localStorage.removeItem("wedplan_pending_role");
-        }
+        window.localStorage.removeItem("wedplan_pending_role");
         persistAppSession(synced);
 
         const resolvedRole = String(
@@ -217,6 +219,7 @@ export default function AuthFormView({
           synced.redirectTo || getRoleRedirect(resolvedRole, redirectParam);
         window.location.assign(targetHref);
       } catch (err) {
+        window.localStorage.removeItem("wedplan_pending_role");
         if (!cancelled) {
           reportError(
             err instanceof Error
@@ -235,7 +238,7 @@ export default function AuthFormView({
     return () => {
       cancelled = true;
     };
-  }, [role, redirectParam]);
+  }, [redirectParam]);
 
   const switchMode = (next: AuthMode) => {
     setMode(next);
@@ -403,6 +406,7 @@ export default function AuthFormView({
 
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem("wedplan_skip_auto_login");
+      window.localStorage.removeItem("wedplan_pending_role");
     }
 
     const trimmedEmail = email.trim();
@@ -523,10 +527,16 @@ export default function AuthFormView({
       });
 
       if (error) {
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem("wedplan_pending_role");
+        }
         reportError(error.message || "Google sign-in failed.");
         setGoogleLoading(false);
       }
     } catch {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("wedplan_pending_role");
+      }
       reportError("Unable to start Google sign-in.");
       setGoogleLoading(false);
     }

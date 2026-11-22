@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter, useParams } from "next/navigation";
 import ProtectedRouteGate from "../../../components/ProtectedRouteGate";
+import { logoutWedPlanSession } from "../../../../lib/logout";
 import {
   LogOut,
   Eye,
@@ -195,6 +196,7 @@ function CustomerProfileContent() {
     useState<CustomerProfileInfo | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [toastMessage, setToastMessage] = useState<ToastState | null>(null);
 
   const syncedOwnerIdRef = useRef<string>("");
@@ -212,6 +214,17 @@ function CustomerProfileContent() {
         setToastMessage((current) => (current?.text === text ? null : current));
       }, duration);
     }
+  };
+
+  const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      logout?.();
+    } catch {
+      // Ignore if context logout is a no-op
+    }
+    await logoutWedPlanSession("/sign-in");
   };
 
   const resetEditFormToSaved = (userObj: any) => {
@@ -597,11 +610,12 @@ function CustomerProfileContent() {
 
                   <button
                     type="button"
-                    onClick={logout}
-                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#C84B31]/25 bg-white/80 px-5 py-3 text-xs font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-white"
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                    className="inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#C84B31]/25 bg-white/80 px-5 py-3 text-xs font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-white disabled:opacity-50"
                   >
                     <LogOut className="h-3.5 w-3.5" />
-                    <span>SIGN OUT</span>
+                    <span>{signingOut ? "SIGNING OUT..." : "SIGN OUT"}</span>
                   </button>
                 </div>
               )}

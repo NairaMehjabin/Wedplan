@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import toast from "react-hot-toast";
+import { logoutWedPlanSession } from "../../../../lib/logout";
 import {
   LogOut,
   Sparkles,
@@ -260,6 +261,7 @@ function VendorProfileContent() {
   const [loadingServices, setLoadingServices] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   // Guard to prevent infinite fetch loops or stuck loading states
   const fetchedKeyRef = useRef<string | null>(null);
@@ -528,15 +530,11 @@ function VendorProfileContent() {
     };
   }, [mounted, authLoaded, fetchVendorAndServices]);
 
-  const handleLogout = () => {
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem("wedplan_token");
-      window.localStorage.removeItem("wedplan_user");
-      window.dispatchEvent(new Event("wedplan-auth-changed"));
-    }
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
     setCurrentUser(null);
-    toast.success("Signed out.");
-    router.push("/sign-in");
+    await logoutWedPlanSession("/sign-in");
   };
 
   const categories = useMemo(() => {
@@ -1087,10 +1085,11 @@ function VendorProfileContent() {
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#C84B31]/25 bg-white/80 px-4 py-2.5 text-center text-xs font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-white"
+                    disabled={loggingOut}
+                    className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-[#C84B31]/25 bg-white/80 px-4 py-2.5 text-center text-xs font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-white disabled:opacity-50"
                   >
                     <LogOut className="h-3.5 w-3.5" />
-                    <span>Sign Out</span>
+                    <span>{loggingOut ? "Signing Out..." : "Sign Out"}</span>
                   </button>
                 </div>
               )}
