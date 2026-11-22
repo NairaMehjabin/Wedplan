@@ -369,6 +369,12 @@ export default function AuthFormView({
       if (typeof window !== "undefined") {
         if (data?.token) {
           window.localStorage.setItem("wedplan_token", data.token);
+          const isHttps = window.location.protocol === "https:";
+          document.cookie = `wedplan_token=${encodeURIComponent(
+            String(data.token)
+          )}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${
+            isHttps ? "; Secure" : ""
+          }`;
         }
         if (data?.user) {
           window.localStorage.setItem("wedplan_user", JSON.stringify(data.user));
@@ -388,8 +394,7 @@ export default function AuthFormView({
       reportSuccess(successText);
 
       const targetHref = getRoleRedirect(resolvedRole, redirectParam);
-      router.refresh();
-      router.push(targetHref);
+      window.location.assign(targetHref);
     } catch (err) {
       reportError(
         err instanceof Error

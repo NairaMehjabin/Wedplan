@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { XCircle, Crown, Loader2, Home } from "lucide-react";
+import ProtectedRouteGate from "../../components/ProtectedRouteGate";
 
 interface SessionUser {
   role?: string;
@@ -26,7 +27,7 @@ function readStoredUser(): SessionUser | null {
   }
 }
 
-export default function PaymentCancelPage() {
+function PaymentCancelContent() {
   const router = useRouter();
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -139,5 +140,13 @@ export default function PaymentCancelPage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function PaymentCancelPage() {
+  return (
+    <ProtectedRouteGate allowedRoles={["customer", "vendor", "admin"]}>
+      <PaymentCancelContent />
+    </ProtectedRouteGate>
   );
 }

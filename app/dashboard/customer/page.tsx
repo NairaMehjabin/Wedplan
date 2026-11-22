@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import ProtectedRouteGate from "../../components/ProtectedRouteGate";
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -126,7 +127,7 @@ function statusPillStyle(status: BookingStatus): {
   }
 }
 
-export default function CustomerDashboardPage() {
+function CustomerDashboardContent() {
   const router = useRouter();
 
   const [mounted, setMounted] = useState(false);
@@ -344,6 +345,7 @@ export default function CustomerDashboardPage() {
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("wedplan_token");
       window.localStorage.removeItem("wedplan_user");
+      document.cookie = "wedplan_token=; path=/; max-age=0; SameSite=Lax";
       window.dispatchEvent(new Event("wedplan-auth-changed"));
     }
     setUser(null);
@@ -1084,5 +1086,13 @@ export default function CustomerDashboardPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+export default function CustomerDashboardPage() {
+  return (
+    <ProtectedRouteGate allowedRoles={["customer"]}>
+      <CustomerDashboardContent />
+    </ProtectedRouteGate>
   );
 }

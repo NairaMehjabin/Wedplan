@@ -4,6 +4,7 @@ import React, { Suspense, useState, useEffect, useMemo, useRef, useCallback } fr
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
+import ProtectedRouteGate from "../../../components/ProtectedRouteGate";
 import toast from "react-hot-toast";
 import {
   LogOut,
@@ -1313,7 +1314,7 @@ function VendorProfileContent() {
                         New Password (Optional)
                       </label>
                       <div className="relative overflow-hidden rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 focus-within:border-teal-700 focus-within:bg-white">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#24020E]/45">
+                        <div className="pointer-events-none inset-y-0 left-0 flex items-center pl-3.5 text-[#24020E]/45 absolute">
                           <Lock className="h-3.5 w-3.5" />
                         </div>
                         <input
@@ -1342,7 +1343,7 @@ function VendorProfileContent() {
                         Confirm New Password
                       </label>
                       <div className="relative overflow-hidden rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/80 focus-within:border-teal-700 focus-within:bg-white">
-                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#24020E]/45">
+                        <div className="pointer-events-none inset-y-0 left-0 flex items-center pl-3.5 text-[#24020E]/45 absolute">
                           <Lock className="h-3.5 w-3.5" />
                         </div>
                         <input
@@ -1924,7 +1925,9 @@ function VendorProfileContent() {
 export default function VendorProfilePage() {
   return (
     <Suspense fallback={<VendorProfileLoadingFallback />}>
-      <VendorProfileContent />
+      <ProtectedRouteGate allowedRoles={["vendor"]}>
+        <VendorProfileContent />
+      </ProtectedRouteGate>
     </Suspense>
   );
 }

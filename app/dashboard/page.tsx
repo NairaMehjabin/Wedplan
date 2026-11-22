@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import ProtectedRouteGate from "../components/ProtectedRouteGate";
 import {
   LayoutDashboard,
   Users,
@@ -158,7 +159,7 @@ function statusBadgeStyle(status: string): string {
   }
 }
 
-export default function AdminDashboardPage() {
+function AdminDashboardContent() {
   const router = useRouter();
 
   const [user, setUser] = useState<AdminUserRecord | null>(null);
@@ -1536,5 +1537,13 @@ export default function AdminDashboardPage() {
         )}
       </AnimatePresence>
     </main>
+  );
+}
+
+export default function AdminDashboardPage() {
+  return (
+    <ProtectedRouteGate allowedRoles={["admin"]}>
+      <AdminDashboardContent />
+    </ProtectedRouteGate>
   );
 }

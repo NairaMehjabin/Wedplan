@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import ProtectedRouteGate from "../../components/ProtectedRouteGate";
 import {
   LayoutDashboard,
   PlusCircle,
@@ -2042,8 +2043,10 @@ function VendorDashboardContent() {
 
 export default function VendorDashboardPage() {
   return (
-    <Suspense fallback={<VendorDashboardLoading />}>
-      <VendorDashboardContent />
-    </Suspense>
+    <ProtectedRouteGate allowedRoles={["vendor"]}>
+      <Suspense fallback={<VendorDashboardLoading />}>
+        <VendorDashboardContent />
+      </Suspense>
+    </ProtectedRouteGate>
   );
 }

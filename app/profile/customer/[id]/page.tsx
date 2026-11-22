@@ -4,6 +4,7 @@ import React, { Suspense, useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../../../context/AuthContext";
 import { useRouter, useParams } from "next/navigation";
+import ProtectedRouteGate from "../../../components/ProtectedRouteGate";
 import {
   LogOut,
   Eye,
@@ -960,7 +961,9 @@ function CustomerProfileContent() {
 export default function CustomerProfilePage() {
   return (
     <Suspense fallback={<ProfileLoadingFallback />}>
-      <CustomerProfileContent />
+      <ProtectedRouteGate allowedRoles={["customer"]}>
+        <CustomerProfileContent />
+      </ProtectedRouteGate>
     </Suspense>
   );
 }

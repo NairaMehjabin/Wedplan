@@ -61,6 +61,14 @@ function writeStoredUser(nextUser: AuthUser | null): void {
   window.localStorage.setItem("user", serialized);
 }
 
+function clearStoredAuth(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem("wedplan_token");
+  window.localStorage.removeItem("token");
+  window.localStorage.removeItem("wedplan_user");
+  window.localStorage.removeItem("user");
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUserState] = useState<AuthUser | null>(null);
@@ -95,6 +103,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         : null;
 
     if (!token) {
+      userRef.current = null;
+      writeStoredUser(null);
+      setUserState(null);
       setIsLoading(false);
       return;
     }
@@ -106,9 +117,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userRef.current = fresh;
         writeStoredUser(fresh);
         setUserState(fresh);
+      } else {
+        clearStoredAuth();
+        userRef.current = null;
+        setUserState(null);
       }
-    } catch {
-      // Keep cached user if offline or server session is still in localStorage
+    } catch (err: unknown) {
+      const status =
+        typeof err === "object" &&
+        err !== null &&
+        "response" in err &&
+        typeof (err as { response?: { status?: number } }).response?.status ===
+          "number"
+          ? (err as { response?: { status?: number } }).response?.status
+          : undefined;
+
+      if (status === 401 || status === 403) {
+        clearStoredAuth();
+        userRef.current = null;
+        setUserState(null);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -140,11 +168,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Ignore network errors on sign-out and clear local session anyway
     }
 
+    clearStoredAuth();
     if (typeof window !== "undefined") {
-      window.localStorage.removeItem("wedplan_token");
-      window.localStorage.removeItem("token");
-      window.localStorage.removeItem("wedplan_user");
-      window.localStorage.removeItem("user");
       window.dispatchEvent(new Event("wedplan-auth-changed"));
     }
 

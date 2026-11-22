@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "../context/AuthContext";
 import { useRouter, useParams } from "next/navigation";
+import ProtectedRouteGate from "../components/ProtectedRouteGate";
 import {
   LogOut,
   Eye,
@@ -951,5 +952,9 @@ function AdminProfileContent() {
 }
 
 export default function AdminProfilePage() {
-  return <AdminProfileContent />;
+  return (
+    <ProtectedRouteGate allowedRoles={["admin"]}>
+      <AdminProfileContent />
+    </ProtectedRouteGate>
+  );
 }

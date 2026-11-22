@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
+import ProtectedRouteGate from "../../components/ProtectedRouteGate";
 import {
   CheckCircle2,
   Crown,
@@ -298,7 +299,9 @@ function PaymentSuccessContent() {
 export default function PaymentSuccessPage() {
   return (
     <Suspense fallback={<PaymentSuccessLoading />}>
-      <PaymentSuccessContent />
+      <ProtectedRouteGate allowedRoles={["customer", "vendor", "admin"]}>
+        <PaymentSuccessContent />
+      </ProtectedRouteGate>
     </Suspense>
   );
 }
