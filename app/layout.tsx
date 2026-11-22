@@ -4,6 +4,7 @@ import { Cormorant_Garamond, Plus_Jakarta_Sans } from "next/font/google";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./context/AuthContext";
 import Navbar from "./components/Navbar";
+import WedPlanFooter from "./components/WedPlanFooter";
 import "./globals.css";
 
 const curlyTitle = localFont({
@@ -75,6 +76,7 @@ export default function RootLayout({
           />
           <Navbar />
           <main className="w-full">{children}</main>
+          <WedPlanFooter />
         </AuthProvider>
       </body>
     </html>

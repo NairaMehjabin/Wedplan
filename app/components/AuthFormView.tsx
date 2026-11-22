@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import { authClient } from "../../lib/auth-client.ts";
 import {
   Sparkles,
   Heart,
@@ -120,6 +121,7 @@ export default function AuthFormView({
   const previewImgRef = useRef<HTMLImageElement | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     text: string;
@@ -406,14 +408,37 @@ export default function AuthFormView({
     }
   };
 
-  const handleGoogleAuth = () => {
+  const handleGoogleAuth = async () => {
+    if (googleLoading) return;
+    setGoogleLoading(true);
+    setFeedback(null);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("wedplan_pending_role", role);
+    }
+
+    const targetPath = getRoleRedirect(role, redirectParam);
+    const origin =
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "http://localhost:3000";
+
     toast("Redirecting to Google sign-in...", { icon: "✨" });
-    const callbackUrl = encodeURIComponent(
-      `${typeof window !== "undefined" ? window.location.origin : "http://localhost:3000"}${
-        redirectParam || getRoleRedirect(role)
-      }`
-    );
-    window.location.href = `${API_BASE}/api/auth/sign-in/social?provider=google&role=${role}&callbackURL=${callbackUrl}`;
+
+    try {
+      const { error } = await authClient.signIn.social({
+        provider: "google",
+        callbackURL: `${origin}${targetPath}`,
+      });
+
+      if (error) {
+        reportError(error.message || "Google sign-in failed.");
+        setGoogleLoading(false);
+      }
+    } catch {
+      reportError("Unable to start Google sign-in.");
+      setGoogleLoading(false);
+    }
   };
 
   return (
@@ -902,7 +927,9 @@ export default function AuthFormView({
 
               <button
                 type="submit"
-                disabled={submitting || uploadingImage || applyingCrop}
+                disabled={
+                  submitting || uploadingImage || applyingCrop || googleLoading
+                }
                 className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#24020E] py-3 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-sm transition hover:bg-teal-800 active:scale-[0.99] disabled:opacity-60 sm:text-sm"
               >
                 {submitting ? (
@@ -938,10 +965,19 @@ export default function AuthFormView({
             <button
               type="button"
               onClick={handleGoogleAuth}
-              className="flex w-full cursor-pointer items-center justify-center gap-2.5 rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 py-2.5 text-xs font-semibold tracking-wider text-[#24020E] uppercase shadow-2xs backdrop-blur-xs transition hover:bg-[#E3F6F5]/75 sm:text-sm"
+              disabled={googleLoading || submitting || uploadingImage || applyingCrop}
+              className="flex w-full cursor-pointer items-center justify-center gap-2.5 rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 py-2.5 text-xs font-semibold tracking-wider text-[#24020E] uppercase shadow-2xs backdrop-blur-xs transition hover:bg-[#E3F6F5]/75 disabled:opacity-60 sm:text-sm"
             >
-              <GoogleLogoMark />
-              <span>Continue with Google</span>
+              {googleLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin text-teal-700" />
+              ) : (
+                <GoogleLogoMark />
+              )}
+              <span>
+                {googleLoading
+                  ? "Redirecting to Google..."
+                  : "Continue with Google"}
+              </span>
             </button>
 
             <p className="mt-5 text-center text-xs text-[#24020E]/70">
