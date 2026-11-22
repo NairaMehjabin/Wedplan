@@ -219,13 +219,13 @@ function NavbarInner({ user: propUser, onLogout }: NavbarProps) {
   const navLinks = currentUser
     ? [
         { label: "Home", href: "/" },
-        { label: "Browse Services", href: "/services" },
+        { label: "Browse Services", href: "/browse-services" },
         { label: "Dashboard", href: dashboardHref, exactDashboard: true },
         { label: "Profile", href: profileHref, matchPrefix: "/profile" },
       ]
     : [
         { label: "Home", href: "/" },
-        { label: "Browse Services", href: "/services" },
+        { label: "Browse Services", href: "/browse-services" },
       ];
 
   const isActive = (

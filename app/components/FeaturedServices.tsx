@@ -229,7 +229,7 @@ export default function FeaturedServices({
 
           <div className="mt-6 flex justify-center">
             <Link
-              href="/services"
+              href="/browse-services"
               style={{
                 backgroundColor: "#24020E",
                 color: "#FCF9F4",

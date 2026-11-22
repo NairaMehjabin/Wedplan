@@ -522,7 +522,7 @@ export default function CustomerDashboardPage() {
 
               <div className="mt-5 space-y-1.5 border-t border-[#24020E]/10 pt-4">
                 <Link
-                  href="/services"
+                  href="/browse-services"
                   className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2 text-xs font-semibold text-[#24020E]/80 transition hover:bg-white/80"
                 >
                   <Search className="h-3.5 w-3.5 text-teal-700" />
@@ -585,7 +585,7 @@ export default function CustomerDashboardPage() {
                   <span>Profile</span>
                 </Link>
                 <Link
-                  href="/services"
+                  href="/browse-services"
                   className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#24020E] px-4 py-2.5 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase shadow-xs transition hover:bg-teal-800"
                 >
                   <Calendar className="h-3.5 w-3.5 text-[#99F6E4]" />
@@ -673,7 +673,7 @@ export default function CustomerDashboardPage() {
                         No booking requests submitted yet.
                       </p>
                       <Link
-                        href="/services"
+                        href="/browse-services"
                         className="mt-3 inline-block rounded-xl bg-[#24020E] px-4 py-2 text-xs font-semibold text-[#FCF9F4]"
                       >
                         Browse Wedding Services

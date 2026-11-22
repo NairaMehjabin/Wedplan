@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   XCircle,
+  Clock,
   Trash2,
   Eye,
   X,
@@ -60,6 +61,7 @@ interface AdminServiceRecord {
   _id: string;
   vendorId?: string;
   vendorName?: string;
+  businessName?: string;
   serviceName: string;
   category?: string;
   description?: string;
@@ -68,6 +70,21 @@ interface AdminServiceRecord {
   images?: string[];
   img?: string;
   status?: "pending" | "approved" | "rejected" | string;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
+interface AdminTransactionRecord {
+  _id?: string;
+  vendorId?: string;
+  vendorName?: string;
+  vendorEmail?: string;
+  businessName?: string;
+  plan?: string;
+  amount?: number;
+  currency?: string;
+  status?: string;
+  stripeSessionId?: string;
   createdAt?: string;
 }
 
@@ -114,8 +131,20 @@ function buildAvatar(seed: string): string {
   )}`;
 }
 
-function formatCurrency(amount = 0): string {
-  return `৳${Number(amount || 0).toLocaleString("en-BD")}`;
+function formatCurrency(amount = 0, currency = "BDT"): string {
+  const symbol = String(currency).toUpperCase() === "USD" ? "$" : "৳";
+  return `${symbol}${Number(amount || 0).toLocaleString("en-BD")}`;
+}
+
+function formatDate(iso?: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function statusBadgeStyle(status: string): string {
@@ -140,16 +169,17 @@ export default function AdminDashboardPage() {
 
   const [usersList, setUsersList] = useState<AdminUserRecord[]>([]);
   const [servicesList, setServicesList] = useState<AdminServiceRecord[]>([]);
+  const [transactionsList, setTransactionsList] = useState<
+    AdminTransactionRecord[]
+  >([]);
 
   const [loadingData, setLoadingData] = useState(true);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<AdminUserRecord | null>(null);
 
-  // User filters
   const [userSearch, setUserSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
 
-  // Service filters (matching WedPlan search, category, location, status & price sort)
   const [serviceSearch, setServiceSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("");
@@ -176,7 +206,6 @@ export default function AdminDashboardPage() {
     router.replace("/sign-in");
   }, [router]);
 
-  // Sync authenticated session via /api/auth/me
   useEffect(() => {
     let active = true;
 
@@ -230,7 +259,7 @@ export default function AdminDashboardPage() {
           }
         }
       } catch {
-        // Keep cached user if backend is temporarily unreachable
+        // Keep cached session on transient error
       } finally {
         if (active) setAuthLoading(false);
       }
@@ -252,7 +281,8 @@ export default function AdminDashboardPage() {
     let anyFailed = false;
 
     try {
-      const res = await fetch(`${API_BASE}/api/services`, {
+      const res = await fetch(`${API_BASE}/api/services/admin/all`, {
+        cache: "no-store",
         headers: authHeaders,
         credentials: "include",
       });
@@ -274,6 +304,7 @@ export default function AdminDashboardPage() {
 
     try {
       const uRes = await fetch(`${API_BASE}/api/admin/users`, {
+        cache: "no-store",
         headers: authHeaders,
         credentials: "include",
       });
@@ -287,14 +318,33 @@ export default function AdminDashboardPage() {
         setUsersList(rawUsers);
       }
     } catch {
-      // Ignore if /api/admin/users isn't reachable yet
+      // Ignore if users endpoint fails
+    }
+
+    try {
+      const tRes = await fetch(`${API_BASE}/api/admin/transactions`, {
+        cache: "no-store",
+        headers: authHeaders,
+        credentials: "include",
+      });
+      if (tRes.ok) {
+        const tJson = await tRes.json().catch(() => null);
+        const rawTx = extractArray(tJson, [
+          "transactions",
+          "data",
+          "items",
+        ]) as AdminTransactionRecord[];
+        setTransactionsList(rawTx);
+      }
+    } catch {
+      // Ignore if transactions endpoint fails
     }
 
     setLoadingData(false);
 
     if (showToast) {
       if (anyFailed) {
-        toast.error("Could not refresh services from /api/services.");
+        toast.error("Could not refresh services from /api/services/admin/all.");
       } else {
         toast.success("Records synced.");
       }
@@ -328,6 +378,7 @@ export default function AdminDashboardPage() {
     const pendingServices = servicesList.filter(
       (s) => String(s.status || "pending").toLowerCase() === "pending"
     ).length;
+    const totalTransactions = transactionsList.length;
 
     return {
       totalUsers,
@@ -335,8 +386,9 @@ export default function AdminDashboardPage() {
       totalCustomers,
       totalServices,
       pendingServices,
+      totalTransactions,
     };
-  }, [usersList, servicesList]);
+  }, [usersList, servicesList, transactionsList]);
 
   const filteredUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
@@ -387,6 +439,9 @@ export default function AdminDashboardPage() {
           .toLowerCase()
           .includes(q) ||
         String(s.vendorName || "")
+          .toLowerCase()
+          .includes(q) ||
+        String(s.businessName || "")
           .toLowerCase()
           .includes(q);
 
@@ -687,6 +742,7 @@ export default function AdminDashboardPage() {
     {
       id: "transactions",
       label: "Transactions",
+      count: String(stats.totalTransactions),
       icon: <Receipt className="h-4 w-4" />,
     },
   ];
@@ -722,6 +778,12 @@ export default function AdminDashboardPage() {
       accent: "#C84B31",
       cardBg: "bg-[#FFF4F7]/85 border-[#24020E]/15",
     },
+    {
+      label: "Total Transactions",
+      value: stats.totalTransactions,
+      accent: "#0F766E",
+      cardBg: "bg-[#E3F6F5]/75 border-teal-900/20",
+    },
   ];
 
   return (
@@ -729,7 +791,6 @@ export default function AdminDashboardPage() {
       style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
       className="relative min-h-screen overflow-x-clip px-4 pt-24 pb-16 sm:px-6 sm:pt-28 lg:px-8"
     >
-      {/* Slim Grid Overlay + Subtle Blush & Mint Glows */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
@@ -759,7 +820,6 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="relative z-10 mx-auto max-w-7xl space-y-8">
-        {/* Header */}
         <header className="flex flex-col justify-between gap-4 border-b border-[#24020E]/10 pb-6 sm:flex-row sm:items-end">
           <div className="space-y-1.5">
             <div className="flex items-center gap-2.5">
@@ -803,9 +863,7 @@ export default function AdminDashboardPage() {
           </button>
         </header>
 
-        {/* Sidebar + Main Content */}
         <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-12">
-          {/* Sidebar */}
           <aside
             className={`${
               mobileNavOpen ? "block" : "hidden"
@@ -890,7 +948,6 @@ export default function AdminDashboardPage() {
             </div>
           </aside>
 
-          {/* Main Panel */}
           <section className="rounded-2xl border border-[#24020E]/15 bg-white/65 p-5 shadow-sm backdrop-blur-md sm:p-7 lg:col-span-9">
             {loadingData ? (
               <div className="flex items-center justify-center gap-2.5 py-20 text-xs font-semibold tracking-widest text-[#24020E]/65 uppercase">
@@ -899,7 +956,6 @@ export default function AdminDashboardPage() {
               </div>
             ) : (
               <AnimatePresence mode="wait">
-                {/* 1. OVERVIEW */}
                 {activeTab === "overview" && (
                   <motion.div
                     key="overview"
@@ -939,7 +995,6 @@ export default function AdminDashboardPage() {
                   </motion.div>
                 )}
 
-                {/* 2. MANAGE USERS */}
                 {activeTab === "users" && (
                   <motion.div
                     key="users"
@@ -1078,7 +1133,6 @@ export default function AdminDashboardPage() {
                   </motion.div>
                 )}
 
-                {/* 3. MANAGE SERVICES */}
                 {activeTab === "services" && (
                   <motion.div
                     key="services"
@@ -1110,7 +1164,6 @@ export default function AdminDashboardPage() {
                       )}
                     </div>
 
-                    {/* Search, Category, Location, Status & Price Sort */}
                     <div className="grid grid-cols-1 gap-2.5 rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/75 p-3.5 backdrop-blur-md sm:grid-cols-2 lg:grid-cols-5">
                       <div className="relative lg:col-span-2">
                         <Search
@@ -1249,21 +1302,21 @@ export default function AdminDashboardPage() {
                                       <MapPin className="h-3 w-3 shrink-0 text-teal-700" />
                                       <span>
                                         {srv.location || "Location TBA"}
-                                        {srv.vendorName
-                                          ? ` • ${srv.vendorName}`
+                                        {srv.businessName || srv.vendorName
+                                          ? ` • ${srv.businessName || srv.vendorName}`
                                           : ""}
                                       </span>
                                     </p>
                                   </div>
                                 </div>
 
-                                <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#24020E]/10 pt-3">
+                                <div className="mt-4 flex flex-wrap items-center gap-1.5 border-t border-[#24020E]/10 pt-3">
                                   <Link
                                     href={`/services/${encodeURIComponent(srv._id)}`}
-                                    className="inline-flex items-center gap-1 rounded-xl border border-teal-800/25 bg-[#E3F6F5]/85 px-3 py-1.5 text-[11px] font-semibold text-teal-950 transition hover:bg-teal-800 hover:text-white"
+                                    className="inline-flex items-center gap-1 rounded-xl border border-teal-800/25 bg-[#E3F6F5]/85 px-2.5 py-1.5 text-[11px] font-semibold text-teal-950 transition hover:bg-teal-800 hover:text-white"
                                   >
                                     <ExternalLink className="h-3 w-3" />
-                                    <span>View Details</span>
+                                    <span>Details</span>
                                   </Link>
 
                                   {statusLower !== "approved" && (
@@ -1276,10 +1329,27 @@ export default function AdminDashboardPage() {
                                           "approved"
                                         )
                                       }
-                                      className="inline-flex cursor-pointer items-center gap-1 rounded-xl bg-teal-700 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-teal-800 disabled:opacity-50"
+                                      className="inline-flex cursor-pointer items-center gap-1 rounded-xl bg-teal-700 px-2.5 py-1.5 text-[11px] font-semibold text-white transition hover:bg-teal-800 disabled:opacity-50"
                                     >
                                       <CheckCircle2 className="h-3.5 w-3.5" />
                                       <span>Approve</span>
+                                    </button>
+                                  )}
+
+                                  {statusLower !== "pending" && (
+                                    <button
+                                      type="button"
+                                      disabled={isBusy}
+                                      onClick={() =>
+                                        void handleUpdateServiceStatus(
+                                          srv,
+                                          "pending"
+                                        )
+                                      }
+                                      className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-amber-700/30 bg-[#FEF9EC] px-2.5 py-1.5 text-[11px] font-semibold text-amber-900 transition hover:bg-amber-100 disabled:opacity-50"
+                                    >
+                                      <Clock className="h-3.5 w-3.5 text-amber-700" />
+                                      <span>Pending</span>
                                     </button>
                                   )}
 
@@ -1293,7 +1363,7 @@ export default function AdminDashboardPage() {
                                           "rejected"
                                         )
                                       }
-                                      className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-[#24020E]/15 bg-white/80 px-3 py-1.5 text-[11px] font-semibold text-[#24020E] transition hover:bg-[#FFEDF1] disabled:opacity-50"
+                                      className="inline-flex cursor-pointer items-center gap-1 rounded-xl border border-[#24020E]/15 bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-[#24020E] transition hover:bg-[#FFEDF1] disabled:opacity-50"
                                     >
                                       <XCircle className="h-3.5 w-3.5 text-[#C84B31]" />
                                       <span>Reject</span>
@@ -1304,7 +1374,7 @@ export default function AdminDashboardPage() {
                                     type="button"
                                     disabled={isBusy}
                                     onClick={() => void handleDeleteService(srv)}
-                                    className="ml-auto inline-flex cursor-pointer items-center gap-1 rounded-xl border border-[#C84B31]/25 bg-red-50/80 px-3 py-1.5 text-[11px] font-semibold text-[#C84B31] transition hover:bg-red-100 disabled:opacity-50"
+                                    className="ml-auto inline-flex cursor-pointer items-center gap-1 rounded-xl border border-[#C84B31]/25 bg-red-50/80 px-2.5 py-1.5 text-[11px] font-semibold text-[#C84B31] transition hover:bg-red-100 disabled:opacity-50"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                     <span>Delete</span>
@@ -1319,7 +1389,6 @@ export default function AdminDashboardPage() {
                   </motion.div>
                 )}
 
-                {/* 4. TRANSACTIONS */}
                 {activeTab === "transactions" && (
                   <motion.div
                     key="transactions"
@@ -1334,13 +1403,48 @@ export default function AdminDashboardPage() {
                         Ledger
                       </span>
                       <h2 className="text-xl font-bold text-[#24020E]">
-                        Transactions
+                        Transactions ({transactionsList.length})
                       </h2>
                     </div>
 
-                    <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-dashed border-[#24020E]/20 bg-[#FFF4F7]/65 p-12 text-center text-xs text-[#24020E]/70 backdrop-blur-md">
-                      No transactions yet.
-                    </div>
+                    {transactionsList.length === 0 ? (
+                      <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-dashed border-[#24020E]/20 bg-[#FFF4F7]/65 p-12 text-center text-xs text-[#24020E]/70 backdrop-blur-md">
+                        No transactions yet.
+                      </div>
+                    ) : (
+                      <div className="max-h-[480px] space-y-3 overflow-y-auto pr-1.5">
+                        {transactionsList.map((tx, idx) => (
+                          <div
+                            key={tx._id || tx.stripeSessionId || idx}
+                            className="flex flex-col justify-between gap-2 rounded-2xl border border-[#24020E]/15 bg-[#FFF4F7]/85 p-4 text-xs shadow-sm sm:flex-row sm:items-center"
+                          >
+                            <div className="space-y-0.5">
+                              <p className="font-bold text-[#24020E]">
+                                {tx.businessName || tx.vendorName || "Vendor"}{" "}
+                                <span className="font-normal text-[#24020E]/65">
+                                  ({tx.vendorEmail || tx.vendorId || "—"})
+                                </span>
+                              </p>
+                              <p className="text-[11px] text-[#24020E]/70">
+                                Plan:{" "}
+                                <strong className="uppercase">
+                                  {tx.plan || "premium"}
+                                </strong>{" "}
+                                • Date: {formatDate(tx.createdAt)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="font-bold text-[#24020E]">
+                                {formatCurrency(tx.amount || 0, tx.currency)}
+                              </span>
+                              <span className="rounded-full border border-teal-800/25 bg-[#E3F6F5] px-2.5 py-0.5 text-[10px] font-bold uppercase text-teal-900">
+                                {tx.status || "paid"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -1349,7 +1453,6 @@ export default function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* User Details Modal */}
       <AnimatePresence>
         {selectedUser && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#24020E]/35 p-4 backdrop-blur-xs">

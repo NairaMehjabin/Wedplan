@@ -37,7 +37,7 @@ interface VendorProfileRecord {
 
 export interface ServiceDetail {
   _id: string;
-  vendorId?: string;
+  vendorId?: string | { _id?: string; id?: string };
   vendorName?: string;
   businessName?: string;
   vendorImage?: string | null;
@@ -58,6 +58,14 @@ interface PageProps {
 const FALLBACK_IMAGE =
   "https://i.pinimg.com/736x/75/b6/2b/75b62baf81b9aacb79b6338d4df69043.jpg";
 
+function resolveVendorId(
+  vendorId?: string | { _id?: string; id?: string } | null
+): string {
+  if (!vendorId) return "";
+  if (typeof vendorId === "string") return vendorId.trim();
+  return String(vendorId._id || vendorId.id || "").trim();
+}
+
 function buildDicebearAvatar(seed: string): string {
   return `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(
     seed || "WedPlan Atelier"
@@ -77,7 +85,58 @@ function extractVendorImage(record?: VendorProfileRecord | null): string {
 
 function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
-  return window.localStorage.getItem("wedplan_token");
+
+  const directKeys = ["wedplan_token", "token", "auth_token", "accessToken"];
+  for (const key of directKeys) {
+    const val = window.localStorage.getItem(key);
+    if (val && val.trim()) {
+      const cleaned = val.replace(/^Bearer\s+/i, "").trim();
+      if (cleaned) {
+        if (key !== "wedplan_token") {
+          window.localStorage.setItem("wedplan_token", cleaned);
+        }
+        return cleaned;
+      }
+    }
+  }
+
+  try {
+    const rawUser = window.localStorage.getItem("wedplan_user");
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser) as {
+        token?: string;
+        accessToken?: string;
+      };
+      const embedded = parsed?.token || parsed?.accessToken;
+      if (embedded && embedded.trim()) {
+        const cleaned = embedded.replace(/^Bearer\s+/i, "").trim();
+        window.localStorage.setItem("wedplan_token", cleaned);
+        return cleaned;
+      }
+    }
+  } catch {
+    // Ignore malformed localStorage payload
+  }
+
+  return null;
+}
+
+async function hasActiveSession(token: string | null): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/me`, {
+      cache: "no-store",
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!res.ok) return false;
+    const data = await res.json().catch(() => null);
+    if (data?.user && typeof window !== "undefined") {
+      window.localStorage.setItem("wedplan_user", JSON.stringify(data.user));
+    }
+    return Boolean(data?.user || data?.success);
+  } catch {
+    return false;
+  }
 }
 
 function validateEventDate(dateStr: string): string | null {
@@ -193,10 +252,11 @@ function ServiceDetailContent({ params }: PageProps) {
           const loadedService: ServiceDetail = data.data;
           setService(loadedService);
 
-          if (loadedService.vendorId) {
+          const vendorIdStr = resolveVendorId(loadedService.vendorId);
+          if (vendorIdStr) {
             try {
               const vRes = await fetch(
-                `${API_BASE}/api/auth/user/${encodeURIComponent(loadedService.vendorId)}`,
+                `${API_BASE}/api/auth/user/${encodeURIComponent(vendorIdStr)}`,
                 {
                   cache: "no-store",
                   credentials: "include",
@@ -241,7 +301,6 @@ function ServiceDetailContent({ params }: PageProps) {
     };
   }, [mounted, id]);
 
-  // Close modal on Escape key
   useEffect(() => {
     if (!isBookingModalOpen) return;
 
@@ -305,6 +364,7 @@ function ServiceDetailContent({ params }: PageProps) {
     try {
       setSubmitting(true);
       const token = getAuthToken();
+      const vendorIdStr = resolveVendorId(service.vendorId);
 
       const res = await fetch(`${API_BASE}/api/bookings`, {
         method: "POST",
@@ -315,7 +375,7 @@ function ServiceDetailContent({ params }: PageProps) {
         },
         body: JSON.stringify({
           serviceId: service._id,
-          vendorId: service.vendorId,
+          ...(vendorIdStr ? { vendorId: vendorIdStr } : {}),
           eventDate: eventDate.trim(),
           eventLocation: eventLocation.trim(),
           message: message.trim(),
@@ -323,7 +383,18 @@ function ServiceDetailContent({ params }: PageProps) {
         }),
       });
 
+      const data = await res.json().catch(() => null);
+
       if (res.status === 401 || res.status === 403) {
+        const stillAuthenticated = await hasActiveSession(token);
+        if (stillAuthenticated) {
+          reportBookingError(
+            data?.message ||
+              "Could not submit booking request. Please verify your account role and try again."
+          );
+          return;
+        }
+
         const authMsg = "Please sign in to submit a booking request.";
         toast.error(authMsg);
         router.replace(
@@ -331,8 +402,6 @@ function ServiceDetailContent({ params }: PageProps) {
         );
         return;
       }
-
-      const data = await res.json().catch(() => null);
 
       if (!res.ok || data?.success === false) {
         throw new Error(
@@ -358,7 +427,6 @@ function ServiceDetailContent({ params }: PageProps) {
     }
   };
 
-  // Identical loading markup across SSR and initial client render
   if (!mounted || loading) {
     return <ServiceDetailLoadingScreen />;
   }
@@ -397,7 +465,8 @@ function ServiceDetailContent({ params }: PageProps) {
 
   const mainImage = galleryImages[activeImageIndex] || FALLBACK_IMAGE;
 
-  const isLinkedVendor = Boolean(service.vendorId);
+  const vendorIdStr = resolveVendorId(service.vendorId);
+  const isLinkedVendor = Boolean(vendorIdStr);
   const ownerName =
     vendorProfile?.name ||
     service.vendorName ||
@@ -407,14 +476,14 @@ function ServiceDetailContent({ params }: PageProps) {
     vendorProfile?.businessName ||
     service.businessName ||
     `${service.category} Specialist`;
-  const ownerSeed = service.vendorId || ownerName;
+  const ownerSeed = vendorIdStr || ownerName;
   const ownerAvatar =
     extractVendorImage(vendorProfile) ||
     service.vendorImage ||
     buildDicebearAvatar(ownerSeed);
-  const vendorProfileHref = service.vendorId
-    ? `/profile/${encodeURIComponent(service.vendorId)}`
-    : `/profile/default-${encodeURIComponent(service._id)}`;
+  const vendorProfileHref = vendorIdStr
+    ? `/profile/vendor/${encodeURIComponent(vendorIdStr)}`
+    : `/profile/vendor/default-${encodeURIComponent(service._id)}`;
 
   const isBookable =
     (service.status || "approved").toLowerCase() === "approved" &&
