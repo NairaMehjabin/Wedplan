@@ -1,7 +1,14 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, {
+  Suspense,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
 import {
@@ -32,6 +39,17 @@ const REGISTERED_CATEGORIES = [
 
 const CATEGORY_OPTIONS = ["All", ...REGISTERED_CATEGORIES];
 
+function normalizeCategoryParam(rawCategory: string | null): string {
+  if (!rawCategory) return "All";
+  const trimmed = rawCategory.trim();
+  if (!trimmed || trimmed.toLowerCase() === "all") return "All";
+
+  const matched = CATEGORY_OPTIONS.find(
+    (option) => option.toLowerCase() === trimmed.toLowerCase()
+  );
+  return matched ?? "All";
+}
+
 function checkIsAuthenticated(): boolean {
   if (typeof window === "undefined") return false;
   return Boolean(window.localStorage.getItem("wedplan_token"));
@@ -45,17 +63,26 @@ function parseNonNegativeNumber(val: string): number | null {
   return num;
 }
 
-export default function BrowseServicesPage() {
+function BrowseServicesContent() {
+  const searchParams = useSearchParams();
+  const categoryFromQuery = searchParams.get("category");
+
   const [services, setServices] = useState<WeddingService[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [selectedCategory, setSelectedCategory] = useState<string>(() =>
+    normalizeCategoryParam(categoryFromQuery)
+  );
   const [locationFilter, setLocationFilter] = useState("");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
+
+  useEffect(() => {
+    setSelectedCategory(normalizeCategoryParam(categoryFromQuery));
+  }, [categoryFromQuery]);
 
   useEffect(() => {
     setIsAuthenticated(checkIsAuthenticated());
@@ -274,7 +301,7 @@ export default function BrowseServicesPage() {
             <div className="flex items-center gap-2">
               <SlidersHorizontal className="h-4 w-4 text-teal-800" />
               <span className="text-xs font-bold tracking-wider text-[#24020E] uppercase">
-                Search & Filter Services
+                Search &amp; Filter Services
               </span>
             </div>
 
@@ -446,5 +473,23 @@ export default function BrowseServicesPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function BrowseServicesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          style={{ backgroundColor: "#FCF9F4", color: "#24020E" }}
+          className="flex min-h-screen items-center justify-center pt-20 text-xs font-semibold"
+        >
+          <Loader2 className="mr-2 h-4 w-4 animate-spin text-teal-800" />
+          <span>Loading wedding services...</span>
+        </div>
+      }
+    >
+      <BrowseServicesContent />
+    </Suspense>
   );
 }

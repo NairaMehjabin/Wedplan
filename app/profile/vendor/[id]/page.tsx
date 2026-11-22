@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useState, useEffect, useMemo, useRef } from "react";
+import React, { Suspense, useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -27,6 +27,9 @@ import {
   ZoomIn,
   Move,
   ArrowLeft,
+  AlertTriangle,
+  Save,
+  Loader2,
 } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -69,12 +72,15 @@ interface VendorProfileInfo {
 
 export interface VendorServiceItem {
   _id: string;
+  vendorId?: string;
   serviceName: string;
   price: number;
   img: string;
+  images?: string[];
   location: string;
   category: string;
   status?: string;
+  isActive?: boolean;
   description?: string;
   createdAt?: string;
 }
@@ -91,21 +97,31 @@ const DEFAULT_FRAMING: ImageFraming = {
   offsetY: 0,
 };
 
-// Placeholder hardcoded service card so the catalog can be tested before the services API is ready
-const PLACEHOLDER_SERVICES: VendorServiceItem[] = [
-  {
-    _id: "placeholder-service-1",
-    serviceName: "Velvet Bloom Mandap & Stage Styling",
-    price: 45000,
-    img: FALLBACK_SERVICE_IMAGE,
-    location: "Rajshahi",
-    category: "Decoration & Florist",
-    status: "approved",
-    description:
-      "Handcrafted floral archways, warm lanterns, and keepsake stage drapery tailored for evening ceremonies.",
-    createdAt: "2026-10-01T10:00:00.000Z",
-  },
-];
+function normalizeServiceItem(raw: Record<string, unknown>): VendorServiceItem {
+  const imagesArr = Array.isArray(raw.images)
+    ? raw.images.map((item) => String(item).trim()).filter(Boolean)
+    : [];
+  const primaryImg =
+    imagesArr[0] ||
+    (typeof raw.img === "string" && raw.img.trim()) ||
+    (typeof raw.image === "string" && raw.image.trim()) ||
+    FALLBACK_SERVICE_IMAGE;
+
+  return {
+    _id: String(raw._id || raw.id || ""),
+    vendorId: raw.vendorId ? String(raw.vendorId) : undefined,
+    serviceName: String(raw.serviceName || raw.title || "Untitled Service"),
+    price: Number(raw.price ?? 0),
+    img: primaryImg,
+    images: imagesArr.length > 0 ? imagesArr : [primaryImg],
+    location: String(raw.location || ""),
+    category: String(raw.category || "Wedding Fashion"),
+    status: raw.status ? String(raw.status) : "approved",
+    isActive: typeof raw.isActive === "boolean" ? raw.isActive : true,
+    description: raw.description ? String(raw.description) : "",
+    createdAt: raw.createdAt ? String(raw.createdAt) : undefined,
+  };
+}
 
 function readCurrentUser(): SessionUser | null {
   if (typeof window === "undefined") return null;
@@ -238,14 +254,32 @@ function VendorProfileContent() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [services, setServices] = useState<VendorServiceItem[]>(
-    PLACEHOLDER_SERVICES
-  );
+  const [services, setServices] = useState<VendorServiceItem[]>([]);
   const [publicVendorInfo, setPublicVendorInfo] =
     useState<VendorProfileInfo | null>(null);
   const [loadingServices, setLoadingServices] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [updating, setUpdating] = useState(false);
+
+  // Edit Service Modal state
+  const [editingService, setEditingService] = useState<VendorServiceItem | null>(
+    null
+  );
+  const [editServiceForm, setEditServiceForm] = useState({
+    serviceName: "",
+    category: WEDDING_SERVICE_CATEGORIES[0],
+    price: "",
+    location: "",
+    description: "",
+    imageUrl: "",
+    isActive: true,
+  });
+  const [savingServiceEdit, setSavingServiceEdit] = useState(false);
+
+  // Delete Service Confirmation Modal state (no window.confirm)
+  const [serviceToDelete, setServiceToDelete] =
+    useState<VendorServiceItem | null>(null);
+  const [deletingService, setDeletingService] = useState(false);
 
   // Search, filter & sort state
   const [searchQuery, setSearchQuery] = useState("");
@@ -344,47 +378,118 @@ function VendorProfileContent() {
     }
   }, [mounted, authLoaded, currentUser, isOwner, params?.id, router]);
 
-  // Fetch public vendor info (when visiting someone else's vendor page) & placeholder services
-  useEffect(() => {
+  // Fetch public vendor info (when visiting someone else's vendor page) & dynamic services for this vendor
+  const fetchVendorAndServices = useCallback(async () => {
     if (!mounted || !vendorId) return;
-    let active = true;
 
-    async function loadVendorAndServices() {
-      try {
-        setLoadingServices(true);
+    try {
+      setLoadingServices(true);
+      const token =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("wedplan_token")
+          : null;
 
-        if (!isOwner) {
-          try {
-            const userRes = await fetch(
-              `${API_BASE}/api/auth/user/${encodeURIComponent(vendorId)}`,
-              { credentials: "include" }
-            );
-            if (userRes.ok) {
-              const userData = await userRes.json().catch(() => null);
-              if (active && (userData?.user || userData?.data || userData)) {
-                setPublicVendorInfo(
-                  userData?.user || userData?.data || userData
-                );
-              }
+      if (!isOwner) {
+        try {
+          const userRes = await fetch(
+            `${API_BASE}/api/auth/user/${encodeURIComponent(vendorId)}`,
+            { credentials: "include" }
+          );
+          if (userRes.ok) {
+            const userData = await userRes.json().catch(() => null);
+            if (userData?.user || userData?.data || userData) {
+              setPublicVendorInfo(
+                userData?.user || userData?.data || userData
+              );
             }
-          } catch {
-            // Public vendor lookup fallback handled below
+          }
+        } catch {
+          // Public vendor lookup fallback handled below
+        }
+      }
+
+      let rawList: Record<string, unknown>[] = [];
+
+      if (isOwner && token) {
+        const mineRes = await fetch(`${API_BASE}/api/services/vendor/mine`, {
+          cache: "no-store",
+          credentials: "include",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (mineRes.ok) {
+          const mineData = await mineRes.json().catch(() => null);
+          if (Array.isArray(mineData?.data)) {
+            rawList = mineData.data;
+          } else if (Array.isArray(mineData?.services)) {
+            rawList = mineData.services;
           }
         }
-
-        if (active) {
-          setServices(PLACEHOLDER_SERVICES);
-        }
-      } finally {
-        if (active) setLoadingServices(false);
       }
-    }
 
-    void loadVendorAndServices();
-    return () => {
-      active = false;
-    };
-  }, [mounted, vendorId, isOwner]);
+      if (rawList.length === 0) {
+        const allRes = await fetch(`${API_BASE}/api/services?limit=100`, {
+          cache: "no-store",
+        });
+        if (allRes.ok) {
+          const allData = await allRes.json().catch(() => null);
+          const allItems: Record<string, unknown>[] = Array.isArray(
+            allData?.data
+          )
+            ? allData.data
+            : Array.isArray(allData?.services)
+              ? allData.services
+              : [];
+
+          rawList = allItems.filter((item) => {
+            const itemVendorId = String(item.vendorId || "");
+            const matchesId = itemVendorId && itemVendorId === vendorId;
+            if (matchesId) return true;
+
+            const targetName = (
+              (isOwner
+                ? currentUser?.businessName || currentUser?.name
+                : publicVendorInfo?.businessName || publicVendorInfo?.name) || ""
+            )
+              .trim()
+              .toLowerCase();
+
+            if (!targetName) return false;
+            const itemBiz = String(item.businessName || "")
+              .trim()
+              .toLowerCase();
+            const itemVendorName = String(item.vendorName || "")
+              .trim()
+              .toLowerCase();
+            return itemBiz === targetName || itemVendorName === targetName;
+          });
+        }
+      }
+
+      const normalized = rawList
+        .map(normalizeServiceItem)
+        .filter((srv) => {
+          if (!srv._id) return false;
+          if (!isOwner) {
+            return (
+              String(srv.status || "").toLowerCase() === "approved" &&
+              srv.isActive !== false
+            );
+          }
+          return true;
+        });
+
+      setServices(normalized);
+    } catch {
+      toast.error("Could not load vendor services.");
+      setServices([]);
+    } finally {
+      setLoadingServices(false);
+    }
+  }, [mounted, vendorId, isOwner, currentUser, publicVendorInfo]);
+
+  useEffect(() => {
+    void fetchVendorAndServices();
+  }, [fetchVendorAndServices]);
 
   const handleLogout = () => {
     if (typeof window !== "undefined") {
@@ -689,18 +794,153 @@ function VendorProfileContent() {
     }
   };
 
-  const handleDeleteService = async (serviceId: string) => {
+  const openEditServiceModal = (srv: VendorServiceItem) => {
     if (!isOwner) return;
-    if (
-      !window.confirm(
-        "Remove this service listing from your vendor showcase?"
-      )
-    ) {
+    setEditingService(srv);
+    setEditServiceForm({
+      serviceName: srv.serviceName || "",
+      category: WEDDING_SERVICE_CATEGORIES.includes(srv.category)
+        ? srv.category
+        : WEDDING_SERVICE_CATEGORIES[0],
+      price: String(srv.price ?? ""),
+      location: srv.location || "",
+      description: srv.description || "",
+      imageUrl: srv.img || srv.images?.[0] || "",
+      isActive: srv.isActive !== false,
+    });
+  };
+
+  const handleSaveServiceEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isOwner || !editingService || savingServiceEdit) return;
+
+    const cleanName = editServiceForm.serviceName.trim();
+    const cleanCategory = editServiceForm.category.trim();
+    const cleanLocation = editServiceForm.location.trim();
+    const cleanDescription = editServiceForm.description.trim();
+    const numericPrice = Number(editServiceForm.price);
+
+    if (!cleanName || !cleanCategory || !cleanLocation || !cleanDescription) {
+      toast.error("Please fill in service name, category, location, and description.");
       return;
     }
 
-    setServices((prev) => prev.filter((s) => s._id !== serviceId));
-    toast.success("Placeholder service removed from view.");
+    if (Number.isNaN(numericPrice) || numericPrice < 0) {
+      toast.error("Please enter a valid non-negative price.");
+      return;
+    }
+
+    try {
+      setSavingServiceEdit(true);
+      const token =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("wedplan_token")
+          : null;
+
+      const resolvedImg =
+        editServiceForm.imageUrl.trim() ||
+        editingService.img ||
+        FALLBACK_SERVICE_IMAGE;
+
+      const res = await fetch(
+        `${API_BASE}/api/services/${encodeURIComponent(editingService._id)}`,
+        {
+          method: "PATCH",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            serviceName: cleanName,
+            category: cleanCategory,
+            price: numericPrice,
+            location: cleanLocation,
+            description: cleanDescription,
+            images: [resolvedImg],
+            isActive: editServiceForm.isActive,
+          }),
+        }
+      );
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.success === false) {
+        toast.error(data?.message || "Failed to update service.");
+        return;
+      }
+
+      const updatedRecord = data?.data || data?.service;
+      setServices((prev) =>
+        prev.map((item) => {
+          if (item._id !== editingService._id) return item;
+          if (updatedRecord && typeof updatedRecord === "object") {
+            return normalizeServiceItem(
+              updatedRecord as Record<string, unknown>
+            );
+          }
+          return {
+            ...item,
+            serviceName: cleanName,
+            category: cleanCategory,
+            price: numericPrice,
+            location: cleanLocation,
+            description: cleanDescription,
+            img: resolvedImg,
+            images: [resolvedImg],
+            isActive: editServiceForm.isActive,
+          };
+        })
+      );
+
+      setEditingService(null);
+      toast.success("Service updated successfully!");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to update service."
+      );
+    } finally {
+      setSavingServiceEdit(false);
+    }
+  };
+
+  const handleConfirmDeleteService = async () => {
+    if (!isOwner || !serviceToDelete || deletingService) return;
+
+    try {
+      setDeletingService(true);
+      const token =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("wedplan_token")
+          : null;
+
+      const res = await fetch(
+        `${API_BASE}/api/services/${encodeURIComponent(serviceToDelete._id)}`,
+        {
+          method: "DELETE",
+          credentials: "include",
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        }
+      );
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok || data?.success === false) {
+        toast.error(data?.message || "Failed to delete service.");
+        return;
+      }
+
+      const deletedId = serviceToDelete._id;
+      setServices((prev) => prev.filter((s) => s._id !== deletedId));
+      setServiceToDelete(null);
+      toast.success("Service deleted.");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Failed to delete service."
+      );
+    } finally {
+      setDeletingService(false);
+    }
   };
 
   return (
@@ -1175,7 +1415,7 @@ function VendorProfileContent() {
               </h2>
               <span className="inline-flex items-center gap-1 rounded-full border border-teal-800/20 bg-[#E3F6F5]/85 px-2.5 py-0.5 text-[10px] font-semibold text-teal-950">
                 <Sparkles className="h-3 w-3 text-teal-700" />
-                <span>Placeholder Card</span>
+                <span>{services.length} Listed</span>
               </span>
             </div>
 
@@ -1293,14 +1533,17 @@ function VendorProfileContent() {
           {/* Scrollable Services Container */}
           <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 sm:mt-5 sm:pr-1.5">
             {loadingServices ? (
-              <div className="py-20 text-center text-xs tracking-wider italic opacity-60">
-                Loading services showcase...
+              <div className="flex items-center justify-center gap-2 py-20 text-xs tracking-wider italic opacity-60">
+                <Loader2 className="h-4 w-4 animate-spin text-teal-700" />
+                <span>Loading services showcase...</span>
               </div>
             ) : filteredAndSortedServices.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-[#24020E]/20 bg-[#FFF4F7]/70 p-10 text-center sm:p-14">
                 <Inbox className="mb-2 h-6 w-6 text-teal-700/60" />
                 <p className="text-xs font-semibold tracking-widest text-[#24020E]/60 uppercase italic">
-                  No services match your current filters.
+                  {hasActiveFilters
+                    ? "No services match your current filters."
+                    : "No services published for this vendor yet."}
                 </p>
                 {hasActiveFilters && (
                   <button
@@ -1330,10 +1573,18 @@ function VendorProfileContent() {
                           src={srv.img || FALLBACK_SERVICE_IMAGE}
                           alt={srv.serviceName}
                           className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          onError={(e) => {
+                            e.currentTarget.src = FALLBACK_SERVICE_IMAGE;
+                          }}
                         />
                         <span className="absolute top-3 left-3 rounded-full border border-teal-800/20 bg-[#FCF9F4]/90 px-3 py-0.5 text-[10px] font-semibold tracking-wider text-teal-950 uppercase backdrop-blur-xs">
                           {srv.category}
                         </span>
+                        {isOwner && srv.status && (
+                          <span className="absolute top-3 right-3 rounded-full border border-[#24020E]/15 bg-white/90 px-2.5 py-0.5 text-[10px] font-bold tracking-wider text-[#24020E] uppercase backdrop-blur-xs">
+                            {srv.status}
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
@@ -1371,13 +1622,7 @@ function VendorProfileContent() {
                             <div className="grid grid-cols-2 gap-2">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  // TODO: Open the Add/Edit Service modal pre-filled with `srv` so the vendor can edit this service
-                                  toast(
-                                    `Edit modal for "${srv.serviceName}" will open here once the Add/Edit Service modal is built.`,
-                                    { icon: "✏️" }
-                                  );
-                                }}
+                                onClick={() => openEditServiceModal(srv)}
                                 className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#24020E]/15 bg-[#E3F6F5]/80 py-2 text-[10px] font-semibold tracking-wider text-teal-950 uppercase transition hover:bg-[#E3F6F5]"
                               >
                                 <Edit3 className="h-3 w-3 text-teal-700" />
@@ -1386,7 +1631,7 @@ function VendorProfileContent() {
 
                               <button
                                 type="button"
-                                onClick={() => handleDeleteService(srv._id)}
+                                onClick={() => setServiceToDelete(srv)}
                                 className="flex cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#C84B31]/25 bg-white/80 py-2 text-[10px] font-semibold tracking-wider text-[#C84B31] uppercase transition hover:bg-[#C84B31] hover:text-white"
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -1404,6 +1649,274 @@ function VendorProfileContent() {
           </div>
         </div>
       </div>
+
+      {/* EDIT SERVICE MODAL */}
+      <AnimatePresence>
+        {isOwner && editingService && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              if (!savingServiceEdit) setEditingService(null);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#24020E]/50 p-4 backdrop-blur-xs"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 12 }}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#24020E]/20 bg-[#FCF9F4] p-6 text-[#24020E] shadow-xl"
+            >
+              <div className="mb-4 flex items-center justify-between border-b border-[#24020E]/10 pb-3">
+                <div>
+                  <span className="text-[10px] font-bold tracking-widest text-teal-800 uppercase">
+                    Update Listing
+                  </span>
+                  <h3
+                    style={{ fontFamily: "var(--font-curly), cursive" }}
+                    className="text-2xl text-[#24020E]"
+                  >
+                    Modify Service
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  disabled={savingServiceEdit}
+                  onClick={() => setEditingService(null)}
+                  className="cursor-pointer rounded-xl border border-[#24020E]/15 bg-white/80 p-2 text-[#24020E] transition hover:bg-[#FFF4F7] disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveServiceEdit} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/70 uppercase">
+                    Service Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editServiceForm.serviceName}
+                    onChange={(e) =>
+                      setEditServiceForm((prev) => ({
+                        ...prev,
+                        serviceName: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 px-3.5 py-2.5 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/70 uppercase">
+                      Category
+                    </label>
+                    <select
+                      value={editServiceForm.category}
+                      onChange={(e) =>
+                        setEditServiceForm((prev) => ({
+                          ...prev,
+                          category: e.target.value,
+                        }))
+                      }
+                      className="w-full cursor-pointer rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 px-3.5 py-2.5 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                    >
+                      {WEDDING_SERVICE_CATEGORIES.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/70 uppercase">
+                      Price (৳ BDT)
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editServiceForm.price}
+                      onChange={(e) =>
+                        setEditServiceForm((prev) => ({
+                          ...prev,
+                          price: e.target.value,
+                        }))
+                      }
+                      className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 px-3.5 py-2.5 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/70 uppercase">
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={editServiceForm.location}
+                    onChange={(e) =>
+                      setEditServiceForm((prev) => ({
+                        ...prev,
+                        location: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 px-3.5 py-2.5 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/70 uppercase">
+                    Image URL
+                  </label>
+                  <input
+                    type="url"
+                    value={editServiceForm.imageUrl}
+                    onChange={(e) =>
+                      setEditServiceForm((prev) => ({
+                        ...prev,
+                        imageUrl: e.target.value,
+                      }))
+                    }
+                    placeholder="https://example.com/service.jpg"
+                    className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 px-3.5 py-2.5 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="ml-1 text-[10px] font-bold tracking-wider text-[#24020E]/70 uppercase">
+                    Description
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editServiceForm.description}
+                    onChange={(e) =>
+                      setEditServiceForm((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    className="w-full rounded-xl border border-[#24020E]/15 bg-[#FFF4F7]/85 px-3.5 py-2.5 text-xs text-[#24020E] outline-none transition focus:border-teal-700 focus:bg-white"
+                    required
+                  />
+                </div>
+
+                <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-[#24020E]/10 bg-white/80 px-3.5 py-2.5 text-xs font-semibold text-[#24020E]">
+                  <input
+                    type="checkbox"
+                    checked={editServiceForm.isActive}
+                    onChange={(e) =>
+                      setEditServiceForm((prev) => ({
+                        ...prev,
+                        isActive: e.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 accent-teal-700"
+                  />
+                  <span>Active &amp; available for booking</span>
+                </label>
+
+                <div className="flex items-center justify-end gap-2.5 border-t border-[#24020E]/10 pt-4">
+                  <button
+                    type="button"
+                    disabled={savingServiceEdit}
+                    onClick={() => setEditingService(null)}
+                    className="cursor-pointer rounded-xl border border-[#24020E]/15 bg-white px-4 py-2.5 text-xs font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#FFF4F7] disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingServiceEdit}
+                    className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[#24020E] px-5 py-2.5 text-xs font-semibold tracking-wider text-[#FCF9F4] uppercase transition hover:bg-teal-800 disabled:opacity-60"
+                  >
+                    {savingServiceEdit ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Save className="h-3.5 w-3.5 text-[#99F6E4]" />
+                    )}
+                    <span>{savingServiceEdit ? "Saving..." : "Save Changes"}</span>
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* DELETE SERVICE CONFIRMATION POPUP MODAL */}
+      <AnimatePresence>
+        {isOwner && serviceToDelete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              if (!deletingService) setServiceToDelete(null);
+            }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#24020E]/50 p-4 backdrop-blur-xs"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl border border-[#24020E]/20 bg-[#FCF9F4] p-6 text-[#24020E] shadow-xl"
+            >
+              <div className="flex items-start gap-3.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#C84B31]/25 bg-[#FFF4F7] text-[#C84B31]">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div className="space-y-1">
+                  <h3
+                    style={{ fontFamily: "var(--font-curly), cursive" }}
+                    className="text-2xl text-[#24020E]"
+                  >
+                    Delete Service?
+                  </h3>
+                  <p className="text-xs leading-relaxed text-[#24020E]/75">
+                    Are you sure you want to permanently remove{" "}
+                    <strong className="text-[#24020E]">
+                      &ldquo;{serviceToDelete.serviceName}&rdquo;
+                    </strong>
+                    ? This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-2.5 border-t border-[#24020E]/10 pt-4">
+                <button
+                  type="button"
+                  disabled={deletingService}
+                  onClick={() => setServiceToDelete(null)}
+                  className="cursor-pointer rounded-xl border border-[#24020E]/15 bg-white px-4 py-2 text-xs font-semibold tracking-wider text-[#24020E] uppercase transition hover:bg-[#FFF4F7] disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingService}
+                  onClick={handleConfirmDeleteService}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[#C84B31] px-4 py-2 text-xs font-semibold tracking-wider text-white uppercase transition hover:bg-[#a63a24] disabled:opacity-60"
+                >
+                  {deletingService ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-3.5 w-3.5" />
+                  )}
+                  <span>{deletingService ? "Deleting..." : "Delete"}</span>
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
