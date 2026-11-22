@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
-import { authClient } from "../../lib/auth-client.ts";
+import { authClient } from "../../lib/auth-client";
 import {
   Sparkles,
   Heart,

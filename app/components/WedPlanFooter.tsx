@@ -3,7 +3,7 @@
 import React, { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
 import { ArrowUp, Sparkles, Heart, LogOut } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -82,7 +82,7 @@ function readStoredUser(): FooterUser | null {
 const titleLetters = "Wed".split("");
 const titleAccentLetters = "Plan".split("");
 
-const containerVariants = {
+const containerVariants: Variants = {
   animate: {
     transition: {
       staggerChildren: 0.1,
@@ -90,7 +90,7 @@ const containerVariants = {
   },
 };
 
-const letterVariants = {
+const letterVariants: Variants = {
   initial: { y: 0 },
   animate: {
     y: [0, -6, 0],
@@ -100,7 +100,7 @@ const letterVariants = {
       ease: "easeInOut",
     },
   },
-} as const;
+};
 
 function WedPlanFooterInner({
   user: propUser,
