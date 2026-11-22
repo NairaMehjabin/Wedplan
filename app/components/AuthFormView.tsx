@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
 import { authClient } from "../../lib/auth-client";
@@ -88,6 +88,23 @@ function getRoleRedirect(role?: string, fallback?: string | null): string {
   }
 }
 
+function persistAppSession(data: { token?: unknown; user?: unknown }) {
+  if (typeof window === "undefined") return;
+  if (data?.token) {
+    window.localStorage.setItem("wedplan_token", String(data.token));
+    const isHttps = window.location.protocol === "https:";
+    document.cookie = `wedplan_token=${encodeURIComponent(
+      String(data.token)
+    )}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${
+      isHttps ? "; Secure" : ""
+    }`;
+  }
+  if (data?.user) {
+    window.localStorage.setItem("wedplan_user", JSON.stringify(data.user));
+  }
+  window.dispatchEvent(new Event("wedplan-auth-changed"));
+}
+
 interface AuthFormViewProps {
   initialMode?: AuthMode;
 }
@@ -96,6 +113,7 @@ export default function AuthFormView({
   initialMode = "sign-in",
 }: AuthFormViewProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const redirectParam = searchParams.get("redirect");
 
@@ -127,6 +145,8 @@ export default function AuthFormView({
     text: string;
   } | null>(null);
 
+  const syncingGoogleRef = useRef(false);
+
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
@@ -140,6 +160,75 @@ export default function AuthFormView({
     setFeedback({ type: "success", text: msg });
     toast.success(msg);
   };
+
+  // Sync Better Auth Google session into WedPlan JWT + MongoDB User + navbar/footer
+  useEffect(() => {
+    if (syncingGoogleRef.current) return;
+    let cancelled = false;
+
+    const syncGoogleSessionIfPresent = async () => {
+      try {
+        const { data: sessionData } = await authClient.getSession();
+        if (!sessionData?.user || cancelled) return;
+
+        syncingGoogleRef.current = true;
+        setGoogleLoading(true);
+        setFeedback(null);
+
+        const pendingRole =
+          typeof window !== "undefined"
+            ? window.localStorage.getItem("wedplan_pending_role") || role
+            : role;
+
+        const res = await fetch(`${API_BASE}/api/auth/google-sync`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: pendingRole }),
+        });
+
+        const synced = await res.json().catch(() => null);
+        if (!res.ok || !synced?.success || !synced?.user) {
+          throw new Error(
+            synced?.message || "Failed to sync Google account role."
+          );
+        }
+
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem("wedplan_pending_role");
+        }
+        persistAppSession(synced);
+
+        const resolvedRole = String(
+          synced.user.role || pendingRole || "customer"
+        );
+        reportSuccess(
+          `Signed in with Google as ${resolvedRole}! Redirecting...`
+        );
+
+        const targetHref =
+          synced.redirectTo || getRoleRedirect(resolvedRole, redirectParam);
+        window.location.assign(targetHref);
+      } catch (err) {
+        if (!cancelled) {
+          reportError(
+            err instanceof Error
+              ? err.message
+              : "Could not complete Google sign-in sync."
+          );
+          setGoogleLoading(false);
+        }
+      } finally {
+        syncingGoogleRef.current = false;
+      }
+    };
+
+    syncGoogleSessionIfPresent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [role, redirectParam]);
 
   const switchMode = (next: AuthMode) => {
     setMode(next);
@@ -368,21 +457,7 @@ export default function AuthFormView({
         );
       }
 
-      if (typeof window !== "undefined") {
-        if (data?.token) {
-          window.localStorage.setItem("wedplan_token", data.token);
-          const isHttps = window.location.protocol === "https:";
-          document.cookie = `wedplan_token=${encodeURIComponent(
-            String(data.token)
-          )}; path=/; max-age=${60 * 60 * 24 * 7}; SameSite=Lax${
-            isHttps ? "; Secure" : ""
-          }`;
-        }
-        if (data?.user) {
-          window.localStorage.setItem("wedplan_user", JSON.stringify(data.user));
-        }
-        window.dispatchEvent(new Event("wedplan-auth-changed"));
-      }
+      persistAppSession(data);
 
       const resolvedRole: string =
         data?.user?.role ||
@@ -395,7 +470,8 @@ export default function AuthFormView({
           : `Registered as ${resolvedRole}! Redirecting to your dashboard...`;
       reportSuccess(successText);
 
-      const targetHref = getRoleRedirect(resolvedRole, redirectParam);
+      const targetHref =
+        data?.redirectTo || getRoleRedirect(resolvedRole, redirectParam);
       window.location.assign(targetHref);
     } catch (err) {
       reportError(
@@ -417,18 +493,21 @@ export default function AuthFormView({
       window.localStorage.setItem("wedplan_pending_role", role);
     }
 
-    const targetPath = getRoleRedirect(role, redirectParam);
     const origin =
       typeof window !== "undefined"
         ? window.location.origin
         : "http://localhost:3000";
+    const returnQuery = redirectParam
+      ? `?redirect=${encodeURIComponent(redirectParam)}`
+      : "";
+    const callbackURL = `${origin}${pathname || "/sign-in"}${returnQuery}`;
 
     toast("Redirecting to Google sign-in...", { icon: "✨" });
 
     try {
       const { error } = await authClient.signIn.social({
         provider: "google",
-        callbackURL: `${origin}${targetPath}`,
+        callbackURL,
       });
 
       if (error) {
