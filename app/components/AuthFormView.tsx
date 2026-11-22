@@ -164,6 +164,13 @@ export default function AuthFormView({
   // Sync Better Auth Google session into WedPlan JWT + MongoDB User + navbar/footer
   useEffect(() => {
     if (syncingGoogleRef.current) return;
+    if (
+      typeof window !== "undefined" &&
+      window.sessionStorage.getItem("wedplan_skip_auto_login") === "1"
+    ) {
+      return;
+    }
+
     let cancelled = false;
 
     const syncGoogleSessionIfPresent = async () => {
@@ -394,6 +401,10 @@ export default function AuthFormView({
     e.preventDefault();
     setFeedback(null);
 
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("wedplan_skip_auto_login");
+    }
+
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
       reportError("Please enter both your email and password.");
@@ -490,6 +501,7 @@ export default function AuthFormView({
     setFeedback(null);
 
     if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem("wedplan_skip_auto_login");
       window.localStorage.setItem("wedplan_pending_role", role);
     }
 
