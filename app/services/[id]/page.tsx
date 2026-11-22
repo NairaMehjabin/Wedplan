@@ -248,6 +248,69 @@ function ServiceDetailLoadingScreen() {
   );
 }
 
+function ProtectedServiceRoute({
+  children,
+  fallbackPath,
+}: {
+  children: React.ReactNode;
+  fallbackPath: string;
+}) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [mounted, setMounted] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [authorized, setAuthorized] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    let active = true;
+
+    async function verifyAccess() {
+      const token = getAuthToken();
+      const cached = getCachedUser(token);
+
+      if (cached && active) {
+        setAuthorized(true);
+      }
+
+      const sessionUser = await fetchSessionUser(token);
+      if (!active) return;
+
+      if (sessionUser) {
+        setAuthorized(true);
+        setCheckingAuth(false);
+        return;
+      }
+
+      if (!cached) {
+        setAuthorized(false);
+        setCheckingAuth(false);
+        const redirectTarget = pathname || fallbackPath;
+        router.replace(
+          `/sign-in?redirect=${encodeURIComponent(redirectTarget)}`
+        );
+      } else {
+        setCheckingAuth(false);
+      }
+    }
+
+    void verifyAccess();
+    return () => {
+      active = false;
+    };
+  }, [mounted, pathname, fallbackPath, router]);
+
+  if (!mounted || checkingAuth || !authorized) {
+    return <ServiceDetailLoadingScreen />;
+  }
+
+  return <>{children}</>;
+}
+
 function ServiceDetailContent({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
@@ -967,9 +1030,13 @@ function ServiceDetailContent({ params }: PageProps) {
 }
 
 export default function ServiceDetailPage({ params }: PageProps) {
+  const { id } = use(params);
+
   return (
     <Suspense fallback={<ServiceDetailLoadingScreen />}>
-      <ServiceDetailContent params={params} />
+      <ProtectedRouteGate fallbackPath={`/services/${id}`}>
+        <ServiceDetailContent params={params} />
+      </ProtectedRouteGate>
     </Suspense>
   );
 }

@@ -261,6 +261,9 @@ function VendorProfileContent() {
   const [isEditing, setIsEditing] = useState(false);
   const [updating, setUpdating] = useState(false);
 
+  // Guard to prevent infinite fetch loops or stuck loading states
+  const fetchedKeyRef = useRef<string | null>(null);
+
   // Edit Service Modal state
   const [editingService, setEditingService] = useState<VendorServiceItem | null>(
     null
@@ -378,118 +381,152 @@ function VendorProfileContent() {
     }
   }, [mounted, authLoaded, currentUser, isOwner, params?.id, router]);
 
-  // Fetch public vendor info (when visiting someone else's vendor page) & dynamic services for this vendor
-  const fetchVendorAndServices = useCallback(async () => {
-    if (!mounted || !vendorId) return;
+  // Fetch public vendor info & dynamic services once per (vendorId, isOwner)
+  const fetchVendorAndServices = useCallback(
+    async (signal?: AbortSignal, force = false) => {
+      if (!mounted || !authLoaded) return;
 
-    try {
+      if (!vendorId) {
+        setServices([]);
+        setLoadingServices(false);
+        return;
+      }
+
+      const fetchKey = `${vendorId}:${isOwner ? "owner" : "public"}`;
+      if (!force && fetchedKeyRef.current === fetchKey) {
+        setLoadingServices(false);
+        return;
+      }
+
+      fetchedKeyRef.current = fetchKey;
       setLoadingServices(true);
-      const token =
-        typeof window !== "undefined"
-          ? window.localStorage.getItem("wedplan_token")
-          : null;
 
-      if (!isOwner) {
-        try {
-          const userRes = await fetch(
-            `${API_BASE}/api/auth/user/${encodeURIComponent(vendorId)}`,
-            { credentials: "include" }
-          );
-          if (userRes.ok) {
-            const userData = await userRes.json().catch(() => null);
-            if (userData?.user || userData?.data || userData) {
-              setPublicVendorInfo(
-                userData?.user || userData?.data || userData
-              );
+      try {
+        const token =
+          typeof window !== "undefined"
+            ? window.localStorage.getItem("wedplan_token")
+            : null;
+
+        let resolvedVendorInfo: VendorProfileInfo | null = null;
+
+        if (!isOwner) {
+          try {
+            const userRes = await fetch(
+              `${API_BASE}/api/auth/user/${encodeURIComponent(vendorId)}`,
+              { credentials: "include", signal }
+            );
+            if (userRes.ok) {
+              const userData = await userRes.json().catch(() => null);
+              const candidate = userData?.user || userData?.data || userData;
+              if (candidate && typeof candidate === "object") {
+                resolvedVendorInfo = candidate as VendorProfileInfo;
+                if (!signal?.aborted) {
+                  setPublicVendorInfo(resolvedVendorInfo);
+                }
+              }
+            }
+          } catch {
+            // Public vendor lookup fallback handled below
+          }
+        }
+
+        let rawList: Record<string, unknown>[] = [];
+
+        if (isOwner && token) {
+          const mineRes = await fetch(`${API_BASE}/api/services/vendor/mine`, {
+            cache: "no-store",
+            credentials: "include",
+            signal,
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (mineRes.ok) {
+            const mineData = await mineRes.json().catch(() => null);
+            if (Array.isArray(mineData?.data)) {
+              rawList = mineData.data;
+            } else if (Array.isArray(mineData?.services)) {
+              rawList = mineData.services;
             }
           }
-        } catch {
-          // Public vendor lookup fallback handled below
         }
-      }
 
-      let rawList: Record<string, unknown>[] = [];
-
-      if (isOwner && token) {
-        const mineRes = await fetch(`${API_BASE}/api/services/vendor/mine`, {
-          cache: "no-store",
-          credentials: "include",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (mineRes.ok) {
-          const mineData = await mineRes.json().catch(() => null);
-          if (Array.isArray(mineData?.data)) {
-            rawList = mineData.data;
-          } else if (Array.isArray(mineData?.services)) {
-            rawList = mineData.services;
-          }
-        }
-      }
-
-      if (rawList.length === 0) {
-        const allRes = await fetch(`${API_BASE}/api/services?limit=100`, {
-          cache: "no-store",
-        });
-        if (allRes.ok) {
-          const allData = await allRes.json().catch(() => null);
-          const allItems: Record<string, unknown>[] = Array.isArray(
-            allData?.data
-          )
-            ? allData.data
-            : Array.isArray(allData?.services)
-              ? allData.services
-              : [];
-
-          rawList = allItems.filter((item) => {
-            const itemVendorId = String(item.vendorId || "");
-            const matchesId = itemVendorId && itemVendorId === vendorId;
-            if (matchesId) return true;
+        if (rawList.length === 0) {
+          const allRes = await fetch(`${API_BASE}/api/services?limit=100`, {
+            cache: "no-store",
+            signal,
+          });
+          if (allRes.ok) {
+            const allData = await allRes.json().catch(() => null);
+            const allItems: Record<string, unknown>[] = Array.isArray(
+              allData?.data
+            )
+              ? allData.data
+              : Array.isArray(allData?.services)
+                ? allData.services
+                : [];
 
             const targetName = (
               (isOwner
                 ? currentUser?.businessName || currentUser?.name
-                : publicVendorInfo?.businessName || publicVendorInfo?.name) || ""
+                : resolvedVendorInfo?.businessName ||
+                  resolvedVendorInfo?.name) || ""
             )
               .trim()
               .toLowerCase();
 
-            if (!targetName) return false;
-            const itemBiz = String(item.businessName || "")
-              .trim()
-              .toLowerCase();
-            const itemVendorName = String(item.vendorName || "")
-              .trim()
-              .toLowerCase();
-            return itemBiz === targetName || itemVendorName === targetName;
+            rawList = allItems.filter((item) => {
+              const itemVendorId = String(item.vendorId || "");
+              if (itemVendorId && itemVendorId === vendorId) return true;
+
+              if (!targetName) return false;
+              const itemBiz = String(item.businessName || "")
+                .trim()
+                .toLowerCase();
+              const itemVendorName = String(item.vendorName || "")
+                .trim()
+                .toLowerCase();
+              return itemBiz === targetName || itemVendorName === targetName;
+            });
+          }
+        }
+
+        const normalized = rawList
+          .map(normalizeServiceItem)
+          .filter((srv) => {
+            if (!srv._id) return false;
+            if (!isOwner) {
+              return (
+                String(srv.status || "").toLowerCase() === "approved" &&
+                srv.isActive !== false
+              );
+            }
+            return true;
           });
+
+        if (!signal?.aborted) {
+          setServices(normalized);
+        }
+      } catch (err) {
+        if ((err as { name?: string })?.name !== "AbortError") {
+          toast.error("Could not load vendor services.");
+          if (!signal?.aborted) {
+            setServices([]);
+          }
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setLoadingServices(false);
         }
       }
-
-      const normalized = rawList
-        .map(normalizeServiceItem)
-        .filter((srv) => {
-          if (!srv._id) return false;
-          if (!isOwner) {
-            return (
-              String(srv.status || "").toLowerCase() === "approved" &&
-              srv.isActive !== false
-            );
-          }
-          return true;
-        });
-
-      setServices(normalized);
-    } catch {
-      toast.error("Could not load vendor services.");
-      setServices([]);
-    } finally {
-      setLoadingServices(false);
-    }
-  }, [mounted, vendorId, isOwner, currentUser, publicVendorInfo]);
+    }, [mounted, authLoaded, vendorId, isOwner, currentUser]);
 
   useEffect(() => {
-    void fetchVendorAndServices();
-  }, [fetchVendorAndServices]);
+    if (!mounted || !authLoaded) return;
+    const controller = new AbortController();
+    void fetchVendorAndServices(controller.signal);
+    return () => {
+      controller.abort();
+    };
+  }, [mounted, authLoaded, fetchVendorAndServices]);
 
   const handleLogout = () => {
     if (typeof window !== "undefined") {
