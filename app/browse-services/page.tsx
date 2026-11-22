@@ -19,27 +19,30 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 type SortOption = "newest" | "price-asc" | "price-desc";
 
-const CATEGORY_OPTIONS = [
-  "All",
-  "Photography & Videography",
+const REGISTERED_CATEGORIES = [
   "Photography & Cinematography",
-  "Wedding Venues",
-  "Decoration & Florist",
-  "Stage & Venue Decor",
-  "Catering Services",
-  "Catering & Desserts",
-  "Makeup & Styling",
   "Bridal Makeup & Styling",
-  "Wedding Fashion",
-  "Bridal Wear & Attire",
+  "Catering & Desserts",
+  "Stage & Venue Decor",
   "Mehndi & Henna",
   "Wedding Planner & Event",
   "DJ & Entertainment",
-];
+  "Bridal Wear & Attire",
+] as const;
+
+const CATEGORY_OPTIONS = ["All", ...REGISTERED_CATEGORIES];
 
 function checkIsAuthenticated(): boolean {
   if (typeof window === "undefined") return false;
   return Boolean(window.localStorage.getItem("wedplan_token"));
+}
+
+function parseNonNegativeNumber(val: string): number | null {
+  const trimmed = val.trim();
+  if (!trimmed) return null;
+  const num = Number(trimmed);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return num;
 }
 
 export default function BrowseServicesPage() {
@@ -100,18 +103,18 @@ export default function BrowseServicesPage() {
     void fetchServices();
   }, [fetchServices]);
 
-  const availableCategories = useMemo(() => {
-    const dynamic = services
-      .map((s) => String(s.category || "").trim())
-      .filter(Boolean);
-    return Array.from(new Set([...CATEGORY_OPTIONS, ...dynamic]));
-  }, [services]);
+  const availableCategories = useMemo(() => CATEGORY_OPTIONS, []);
 
   const filteredAndSortedServices = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const loc = locationFilter.trim().toLowerCase();
-    const parsedMin = minPrice.trim() === "" ? null : Number(minPrice);
-    const parsedMax = maxPrice.trim() === "" ? null : Number(maxPrice);
+
+    const rawMin = parseNonNegativeNumber(minPrice);
+    const rawMax = parseNonNegativeNumber(maxPrice);
+    const effectiveMin =
+      rawMin !== null && rawMax !== null ? Math.min(rawMin, rawMax) : rawMin;
+    const effectiveMax =
+      rawMin !== null && rawMax !== null ? Math.max(rawMin, rawMax) : rawMax;
 
     const filtered = services.filter((srv) => {
       if (q) {
@@ -145,18 +148,10 @@ export default function BrowseServicesPage() {
       }
 
       const numericPrice = Number(srv.price ?? 0);
-      if (
-        parsedMin !== null &&
-        !Number.isNaN(parsedMin) &&
-        numericPrice < parsedMin
-      ) {
+      if (effectiveMin !== null && numericPrice < effectiveMin) {
         return false;
       }
-      if (
-        parsedMax !== null &&
-        !Number.isNaN(parsedMax) &&
-        numericPrice > parsedMax
-      ) {
+      if (effectiveMax !== null && numericPrice > effectiveMax) {
         return false;
       }
 

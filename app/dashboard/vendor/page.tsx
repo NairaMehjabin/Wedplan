@@ -939,7 +939,7 @@ export default function VendorDashboardPage() {
 
               <div className="mt-5 space-y-1.5 border-t border-[#24020E]/10 pt-4">
                 <Link
-                  href="/services"
+                  href="/browse-services"
                   className="flex w-full items-center gap-2.5 rounded-xl px-3.5 py-2 text-xs font-semibold text-[#24020E]/80 transition hover:bg-white/80"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-teal-700" />

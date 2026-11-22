@@ -416,6 +416,8 @@ function ServiceDetailContent({ params }: PageProps) {
       setEventDate("");
       setEventLocation("");
       setMessage("");
+      setIsBookingModalOpen(false);
+      router.push("/dashboard/customer");
     } catch (err) {
       const errMsg =
         err instanceof Error
