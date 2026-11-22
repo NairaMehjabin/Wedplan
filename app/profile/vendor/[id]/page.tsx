@@ -4,7 +4,6 @@ import React, { Suspense, useState, useEffect, useMemo, useRef, useCallback } fr
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import ProtectedRouteGate from "../../../components/ProtectedRouteGate";
 import toast from "react-hot-toast";
 import {
   LogOut,
@@ -1925,9 +1924,7 @@ function VendorProfileContent() {
 export default function VendorProfilePage() {
   return (
     <Suspense fallback={<VendorProfileLoadingFallback />}>
-      <ProtectedRouteGate allowedRoles={["vendor"]}>
-        <VendorProfileContent />
-      </ProtectedRouteGate>
+      <VendorProfileContent />
     </Suspense>
   );
 }
